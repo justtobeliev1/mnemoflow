@@ -3,14 +3,11 @@
 import React, { useState, useRef, useEffect } from "react";
 import { Search, Clock } from "lucide-react";
 import { cn } from "@/lib/utils";
-import { useAuth } from "@/contexts/AuthContext";
-import { supabase } from "@/lib/supabase";
 
 interface SearchHistoryItem {
-  id: string;
-  query: string;
-  search_count: number;
-  last_searched_at: string;
+  word: string;
+  definition: string;
+  searchedAt: string;
 }
 
 interface SearchWithHistoryProps {
@@ -26,76 +23,20 @@ const SearchWithHistory: React.FC<SearchWithHistoryProps> = ({
 }) => {
   const [query, setQuery] = useState("");
   const [isOpen, setIsOpen] = useState(false);
-  const [searchHistory, setSearchHistory] = useState<SearchHistoryItem[]>([]);
-  const [loading, setLoading] = useState(false);
-  
-  const { session } = useAuth();
+  const [searchHistory] = useState<SearchHistoryItem[]>([
+    { word: "flow", definition: "流动; 流畅; 流程", searchedAt: "2分钟前" },
+    { word: "yellow", definition: "黄色的; 黄色的(比喻意义)", searchedAt: "15分钟前" },
+    { word: "purple", definition: "紫色的; 紫红色的", searchedAt: "1小时前" },
+    { word: "orange", definition: "橙子; 橙色的; 橙色", searchedAt: "今天早上" },
+  ]);
+
   const inputRef = useRef<HTMLInputElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
 
-  // 获取搜索历史
-  const fetchSearchHistory = async () => {
-    if (!session?.access_token) return;
-
-    try {
-      const response = await fetch('/api/me/search-history?limit=5', {
-        headers: {
-          'Authorization': `Bearer ${session.access_token}`
-        }
-      });
-
-      if (response.ok) {
-        const data = await response.json();
-        setSearchHistory(data.history);
-      }
-    } catch (error) {
-      console.error('获取搜索历史失败:', error);
-    }
-  };
-
-  // 添加搜索记录
-  const addSearchRecord = async (searchQuery: string, resultsCount: number = 0) => {
-    if (!session?.access_token) return;
-
-    try {
-      await fetch('/api/me/search-history', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${session.access_token}`
-        },
-        body: JSON.stringify({
-          query: searchQuery,
-          resultsCount
-        })
-      });
-    } catch (error) {
-      console.error('添加搜索记录失败:', error);
-    }
-  };
-
-  // 组件挂载时获取搜索历史
-  useEffect(() => {
-    if (session) {
-      fetchSearchHistory();
-    }
-  }, [session]);
-
-  const handleSearch = async (searchQuery: string) => {
+  const handleSearch = (searchQuery: string) => {
     if (searchQuery.trim()) {
-      setLoading(true);
-      
-      // 执行搜索
       onSearch?.(searchQuery.trim());
-      
-      // 添加搜索记录
-      await addSearchRecord(searchQuery.trim());
-      
-      // 重新获取搜索历史
-      await fetchSearchHistory();
-      
       setIsOpen(false);
-      setLoading(false);
     }
   };
 
@@ -105,21 +46,9 @@ const SearchWithHistory: React.FC<SearchWithHistoryProps> = ({
     }
   };
 
-  const handleHistoryClick = (searchQuery: string) => {
-    setQuery(searchQuery);
-    handleSearch(searchQuery);
-  };
-
-  // 格式化时间显示
-  const formatTimeAgo = (dateString: string) => {
-    const now = new Date();
-    const searchTime = new Date(dateString);
-    const diffInMinutes = Math.floor((now.getTime() - searchTime.getTime()) / (1000 * 60));
-    
-    if (diffInMinutes < 1) return "刚刚";
-    if (diffInMinutes < 60) return `${diffInMinutes}分钟前`;
-    if (diffInMinutes < 1440) return `${Math.floor(diffInMinutes / 60)}小时前`;
-    return `${Math.floor(diffInMinutes / 1440)}天前`;
+  const handleHistoryClick = (word: string) => {
+    setQuery(word);
+    handleSearch(word);
   };
 
   // 点击外部关闭下拉
@@ -150,14 +79,9 @@ const SearchWithHistory: React.FC<SearchWithHistoryProps> = ({
         />
         <button
           onClick={() => handleSearch(query)}
-          disabled={loading}
-          className="absolute right-3 top-1/2 transform -translate-y-1/2 p-2 text-muted hover:text-foreground transition-colors duration-200 disabled:opacity-50"
+          className="absolute right-3 top-1/2 transform -translate-y-1/2 p-2 text-muted hover:text-foreground transition-colors duration-200"
         >
-          {loading ? (
-            <div className="animate-spin rounded-full h-5 w-5 border-b-2 border-muted"></div>
-          ) : (
-            <Search size={20} />
-          )}
+          <Search size={20} />
         </button>
       </div>
 
@@ -172,23 +96,23 @@ const SearchWithHistory: React.FC<SearchWithHistoryProps> = ({
           </div>
           
           <div className="py-2">
-            {searchHistory.map((item) => (
+            {searchHistory.map((item, index) => (
               <button
-                key={item.id}
-                onClick={() => handleHistoryClick(item.query)}
+                key={index}
+                onClick={() => handleHistoryClick(item.word)}
                 className="w-full px-4 py-3 text-left hover:bg-surface/60 transition-colors duration-150 group"
               >
                 <div className="flex items-center justify-between">
                   <div className="flex-1">
                     <div className="font-medium text-foreground group-hover:text-primary transition-colors">
-                      {item.query}
+                      {item.word}
                     </div>
                     <div className="text-sm text-muted mt-1">
-                      {item.search_count} 次搜索
+                      {item.definition}
                     </div>
                   </div>
                   <div className="text-xs text-muted ml-4">
-                    {formatTimeAgo(item.last_searched_at)}
+                    {item.searchedAt}
                   </div>
                 </div>
               </button>
