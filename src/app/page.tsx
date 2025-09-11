@@ -146,51 +146,12 @@ function HomePageContent() {
 
   // 组件挂载时获取数据
   React.useEffect(() => {
-    if (session?.access_token) {
-      const fetchData = async () => {
-        try {
-          // Fetch word lists
-          const wordRes = await fetch('/api/me/word-lists', {
-            headers: { 'Authorization': `Bearer ${session.access_token}` }
-          });
-          if (wordRes.status === 401) {
-            console.error('Token 无效，尝试刷新');
-            // Assuming supabase is available globally or passed as a prop
-            // const { data } = await supabase.auth.refreshSession();
-            // setSession(data.session);
-            return; // 重试或处理
-          }
-          const wordData = await wordRes.json();
-          setWordLists(wordData.wordLists || []);
-
-          // Fetch FSRS data
-          const reviewRes = await fetch('/api/me/review/queue?type=review&limit=1', {
-            headers: { 'Authorization': `Bearer ${session.access_token}` }
-          });
-          if (reviewRes.status === 401) throw new Error('认证失败');
-          const reviewData = await reviewRes.json();
-          setFsrsData(reviewData.stats);
-
-          // 其他 fetch 类似...
-        } catch (err) {
-          console.error('数据获取失败:', err);
-        }
-      };
-      fetchData();
+    if (session) {
+      // 认证已经处理了初始化，直接获取数据
+      fetchReviewData();
+      fetchWordLists();
     }
   }, [session]);
-
-  // 对于 initializeUserData
-  const initializeUserData = async (accessToken) => {
-    try {
-      await fetch('/api/me/profile/initialize', {
-        method: 'POST',
-        headers: { 'Authorization': `Bearer ${accessToken}` }
-      });
-    } catch (err) {
-      console.error('初始化失败:', err);
-    }
-  };
 
   const fadeUpVariants = {
     hidden: { opacity: 0, y: 30 },
