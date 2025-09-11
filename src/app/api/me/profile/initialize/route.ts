@@ -29,7 +29,7 @@ export async function POST(request: NextRequest) {
     // 检查用户是否已有档案
     const { data: existingProfile } = await supabase
       .from('profiles')
-      .select('id')
+      .select('id, default_word_list_id')
       .eq('id', user.id)
       .single()
 
@@ -48,30 +48,51 @@ export async function POST(request: NextRequest) {
       }
     }
 
-    // 检查用户是否已有默认单词本
-    const { data: existingWordList } = await supabase
+    // 如果 profiles 已经有默认单词本引用且存在，则结束
+    if (existingProfile?.default_word_list_id) {
+      const { data: wlById } = await supabase
+        .from('word_lists')
+        .select('id')
+        .eq('user_id', user.id)
+        .eq('id', existingProfile.default_word_list_id)
+        .single();
+      if (wlById) {
+        return NextResponse.json({ success: true, message: '用户数据初始化完成' });
+      }
+    }
+
+    // 若 profiles 未设置或引用已失效：先查是否已有名为“默认单词本”的列表
+    const { data: wlByName } = await supabase
       .from('word_lists')
       .select('id')
       .eq('user_id', user.id)
-      .eq('is_default', true)
-      .single()
+      .eq('name', '默认单词本')
+      .maybeSingle();
 
-    // 如果没有默认单词本，创建一个
-    if (!existingWordList) {
-      const { error: wordListError } = await supabase
+    let defaultListId = wlByName?.id as string | null;
+
+    // 若不存在则创建
+    if (!defaultListId) {
+      const { data: newWordList, error: wordListError } = await supabase
         .from('word_lists')
-        .insert({
-          user_id: user.id,
-          name: '默认单词本',
-          is_default: true
-        })
-
+        .insert({ user_id: user.id, name: '默认单词本' })
+        .select('id')
+        .single();
       if (wordListError) {
-        console.error('创建默认单词本失败:', wordListError)
-        return NextResponse.json(
-          { error: '初始化默认单词本失败' },
-          { status: 500 }
-        )
+        console.error('创建默认单词本失败:', wordListError);
+        return NextResponse.json({ error: '初始化默认单词本失败' }, { status: 500 });
+      }
+      defaultListId = newWordList.id;
+    }
+
+    // 更新 profiles.default_word_list_id（幂等）
+    if (defaultListId && defaultListId !== existingProfile?.default_word_list_id) {
+      const { error: updateError } = await supabase
+        .from('profiles')
+        .update({ default_word_list_id: defaultListId })
+        .eq('id', user.id);
+      if (updateError) {
+        console.error('更新默认单词本 ID 失败:', updateError);
       }
     }
 

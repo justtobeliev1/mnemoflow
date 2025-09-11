@@ -35,21 +35,25 @@ const SearchWithHistory: React.FC<SearchWithHistoryProps> = ({
 
   // 获取搜索历史
   const fetchSearchHistory = async () => {
-    if (!session?.access_token) return;
-
+    setLoading(true);
     try {
-      const response = await fetch('/api/me/search-history?limit=5', {
+      const response = await fetch(`/api/me/search-history?limit=5`, {
         headers: {
-          'Authorization': `Bearer ${session.access_token}`
+          'Authorization': `Bearer ${session?.access_token}`  // 添加 token
         }
       });
-
-      if (response.ok) {
-        const data = await response.json();
-        setSearchHistory(data.history);
+      if (!response.ok) {
+        if (response.status === 401) {
+          console.error('认证失败，请重新登录');
+        }
+        throw new Error('获取搜索历史失败');
       }
-    } catch (error) {
-      console.error('获取搜索历史失败:', error);
+      const data = await response.json();
+      setSearchHistory(data.history || []);
+    } catch (err) {
+      console.error('获取搜索历史失败:', err);
+    } finally {
+      setLoading(false);
     }
   };
 
