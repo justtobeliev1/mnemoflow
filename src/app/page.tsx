@@ -1,35 +1,17 @@
 "use client";
 
 import React from "react";
-import { User, Settings, LogOut } from "lucide-react";
+import { User, Settings } from "lucide-react";
 import { SearchWithHistory } from "@/components/ui/search-with-history";
 import { InteractiveHoverButton } from "@/components/ui/interactive-hover-button";
 import { LearningStatsCard } from "@/components/ui/learning-stats-card";
 import { WordListCard } from "@/components/ui/word-list-card";
 import { Tooltip } from "@/components/ui/tooltip";
+import { AnimatedBackground } from "@/components/ui/animated-background";
 import { HorizontalWordLists } from "@/components/ui/horizontal-word-lists";
-import { ProtectedRoute } from "@/components/auth/ProtectedRoute";
-import { useAuth } from "@/contexts/AuthContext";
-import { AppLayout } from "@/components/layout/AppLayout";
-import { LogoutConfirmModal } from "@/components/ui/logout-confirm-modal";
-import { CreateWordListModal } from "@/components/ui/create-wordlist-modal";
 import { motion } from "framer-motion";
-import { useToast, ToastContainer } from "@/components/ui/toast-notification";
 
-function HomePageContent() {
-  const { user, signOut, session } = useAuth();
-  const { success, error } = useToast();
-  const [fsrsData, setFsrsData] = React.useState({
-    dueForReview: 0,
-    newToLearn: 0,
-    totalLearned: 0,
-  });
-  const [wordLists, setWordLists] = React.useState<{name: string, wordCount: number, id: string}[]>([]);
-  const [showLogoutModal, setShowLogoutModal] = React.useState(false);
-  const [logoutLoading, setLogoutLoading] = React.useState(false);
-  const [showCreateWordListModal, setShowCreateWordListModal] = React.useState(false);
-  const [createWordListLoading, setCreateWordListLoading] = React.useState(false);
-
+export default function HomePage() {
   const handleSearch = (query: string) => {
     console.log("搜索:", query);
     // TODO: 实现搜索逻辑
@@ -51,163 +33,45 @@ function HomePageContent() {
   };
 
   const handleCreateWordList = () => {
-    setShowCreateWordListModal(true);
+    console.log("创建新单词本");
+    // TODO: 打开创建单词本对话框
   };
 
-  const handleConfirmCreateWordList = async (name: string, description?: string) => {
-    if (!session?.access_token) return;
+  // 模拟数据
+  const wordLists = [
+    { name: "默认单词本", wordCount: 0 },
+    { name: "test", wordCount: 0 },
+    { name: "test1", wordCount: 0 },
+    { name: "测试", wordCount: 7 },
+    { name: "Bellon", wordCount: 23 },
+    { name: "Elon", wordCount: 4 },
+  ];
 
-    // 防重名检查
-    const existingList = wordLists.find(list => list.name.toLowerCase() === name.toLowerCase());
-    if (existingList) {
-      error('单词本名称已存在，请使用其他名称');
-      throw new Error('单词本名称已存在');
-    }
-
-    // 乐观更新 - 先添加到本地状态
-    const optimisticId = Date.now().toString();
-    const optimisticList = {
-      id: optimisticId,
-      name: name,
-      wordCount: 0
-    };
-    
-    setWordLists(prev => [optimisticList, ...prev]);
-    setCreateWordListLoading(true);
-    
-    try {
-      const response = await fetch('/api/me/word-lists', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${session.access_token}`
-        },
-        body: JSON.stringify({ name, description })
-      });
-
-      if (response.ok) {
-        const data = await response.json();
-        // 用真实数据替换乐观更新的数据
-        const realWordList = {
-          id: data.wordList.id.toString(),
-          name: data.wordList.name,
-          wordCount: 0
-        };
-        
-        setWordLists(prev => {
-          const index = prev.findIndex(list => list.id === optimisticId);
-          if (index === -1) return prev;
-          const newList = [...prev];
-          newList[index] = realWordList;
-          return newList;
-        });
-        
-        setShowCreateWordListModal(false);
-        success(`单词本「${name}」创建成功！`);
-      } else {
-        // 创建失败，回滚乐观更新
-        setWordLists(prev => prev.filter(list => list.id !== optimisticId));
-        const errorData = await response.json();
-        error(errorData.error || '创建失败，请重试');
-        throw new Error(errorData.error || '创建失败');
-      }
-    } catch (err) {
-      // 网络错误等，回滚乐观更新
-      setWordLists(prev => prev.filter(list => list.id !== optimisticId));
-      console.error('创建单词本失败:', err);
-      if (err instanceof Error && !err.message.includes('已存在')) {
-        error('网络错误，请检查连接后重试');
-      }
-      throw err;
-    } finally {
-      setCreateWordListLoading(false);
-    }
+  // FSRS算法模拟数据
+  const fsrsData = {
+    dueForReview: 15,    // 今日待复习
+    newToLearn: 28,      // 待学习新词
+    totalLearned: 243,   // 总计学习过的词
   };
-
-  const handleSignOut = () => {
-    setShowLogoutModal(true);
-  };
-
-  const handleConfirmLogout = async () => {
-    setLogoutLoading(true);
-    try {
-      await signOut();
-      setShowLogoutModal(false);
-    } catch (error) {
-      console.error('退出登录失败:', error);
-    } finally {
-      setLogoutLoading(false);
-    }
-  };
-
-  // 获取复习数据
-  const fetchReviewData = async () => {
-    if (!session?.access_token) return;
-
-    try {
-      const response = await fetch('/api/me/review/queue?type=review&limit=1', {
-        headers: {
-          'Authorization': `Bearer ${session.access_token}`
-        }
-      });
-
-      if (response.ok) {
-        const data = await response.json();
-        setFsrsData(data.stats);
-      }
-    } catch (error) {
-      console.error('获取复习数据失败:', error);
-    }
-  };
-
-  // 获取单词本数据
-  const fetchWordLists = async () => {
-    if (!session?.access_token) return;
-
-    try {
-      const response = await fetch('/api/me/word-lists', {
-        headers: {
-          'Authorization': `Bearer ${session.access_token}`
-        }
-      });
-
-      if (response.ok) {
-        const data = await response.json();
-        if (data.wordLists && data.wordLists.length > 0) {
-          setWordLists(data.wordLists.map((wl: any) => ({
-            id: wl.id,
-            name: wl.name,
-            wordCount: wl.wordCount || 0
-          })));
-        }
-      }
-    } catch (error) {
-      console.error('获取单词本失败:', error);
-    }
-  };
-
-  // 组件挂载时获取数据
-  React.useEffect(() => {
-    if (session) {
-      // 认证已经处理了初始化，直接获取数据
-      fetchReviewData();
-      fetchWordLists();
-    }
-  }, [session]);
 
   const fadeUpVariants = {
-    hidden: { 
-      opacity: 0, 
-      y: 30 
-    },
-    visible: {
+    hidden: { opacity: 0, y: 30 },
+    visible: (i: number) => ({
       opacity: 1,
-      y: 0
-    },
+      y: 0,
+      transition: {
+        duration: 0.8,
+        delay: 0.2 + i * 0.1,
+        ease: [0.25, 0.4, 0.25, 1],
+      },
+    }),
   };
 
   return (
-    <AppLayout>
+    <div className="min-h-screen bg-background relative">
+      {/* 动画背景 */}
+      <AnimatedBackground />
+
       {/* 头部导航 */}
       <motion.header 
         initial={{ opacity: 0, y: -20 }}
@@ -224,18 +88,11 @@ function HomePageContent() {
           </div>
           
           <div className="flex items-center gap-4">
-            <span className="text-sm text-muted hidden sm:block">
-              {user?.email}
-            </span>
             <button className="p-2 text-muted hover:text-foreground transition-colors rounded-lg hover:bg-surface/60">
               <Settings size={20} />
             </button>
-            <button 
-              onClick={handleSignOut}
-              className="p-2 text-muted hover:text-foreground transition-colors rounded-lg hover:bg-surface/60"
-              title="退出登录"
-            >
-              <LogOut size={20} />
+            <button className="p-2 text-muted hover:text-foreground transition-colors rounded-lg hover:bg-surface/60">
+              <User size={20} />
             </button>
           </div>
         </div>
@@ -244,10 +101,10 @@ function HomePageContent() {
       <main className="relative z-10 max-w-7xl mx-auto px-6 py-12">
         {/* 欢迎区域 */}
         <motion.div 
+          custom={0}
           variants={fadeUpVariants}
           initial="hidden"
           animate="visible"
-          transition={{ delay: 0.2 }}
           className="text-center mb-12"
         >
           <h1 className="text-4xl font-bold mb-4">
@@ -259,10 +116,10 @@ function HomePageContent() {
 
         {/* 搜索区域 */}
         <motion.div 
+          custom={1}
           variants={fadeUpVariants}
           initial="hidden"
           animate="visible"
-          transition={{ delay: 0.3 }}
           className="mb-16"
         >
           <SearchWithHistory onSearch={handleSearch} />
@@ -270,10 +127,10 @@ function HomePageContent() {
 
         {/* FSRS学习状态 */}
         <motion.div 
+          custom={2}
           variants={fadeUpVariants}
           initial="hidden"
           animate="visible"
-          transition={{ delay: 0.4 }}
           className="grid grid-cols-2 gap-12 mb-12 max-w-2xl mx-auto"
         >
           <div className="text-center">
@@ -322,10 +179,10 @@ function HomePageContent() {
 
         {/* 学习和复习按钮 */}
         <motion.div 
+          custom={3}
           variants={fadeUpVariants}
           initial="hidden"
           animate="visible"
-          transition={{ delay: 0.5 }}
           className="flex justify-center gap-8 mb-16"
         >
           <InteractiveHoverButton
@@ -342,10 +199,10 @@ function HomePageContent() {
 
         {/* 单词本区域 - 横向滚动 */}
         <motion.div
+          custom={4}
           variants={fadeUpVariants}
           initial="hidden"
           animate="visible"
-          transition={{ delay: 0.6 }}
         >
           <HorizontalWordLists
             wordLists={wordLists}
@@ -354,31 +211,6 @@ function HomePageContent() {
           />
         </motion.div>
       </main>
-
-      {/* 退出登录确认弹窗 */}
-      <LogoutConfirmModal
-        isOpen={showLogoutModal}
-        onClose={() => setShowLogoutModal(false)}
-        onConfirm={handleConfirmLogout}
-        loading={logoutLoading}
-      />
-
-      {/* 创建单词本弹窗 */}
-      <CreateWordListModal
-        isOpen={showCreateWordListModal}
-        onClose={() => setShowCreateWordListModal(false)}
-        onConfirm={handleConfirmCreateWordList}
-        loading={createWordListLoading}
-      />
-    </AppLayout>
-  );
-}
-
-export default function HomePage() {
-  return (
-    <ProtectedRoute>
-      <HomePageContent />
-      <ToastContainer />
-    </ProtectedRoute>
+    </div>
   );
 }
