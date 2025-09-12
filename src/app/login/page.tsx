@@ -41,16 +41,14 @@ export default function LoginPage() {
   };
 
   const fadeUpVariants = {
-    hidden: { opacity: 0, y: 30 },
-    visible: (i: number) => ({
+    hidden: { 
+      opacity: 0, 
+      y: 30 
+    },
+    visible: {
       opacity: 1,
-      y: 0,
-      transition: {
-        duration: 0.8,
-        delay: 0.2 + i * 0.1,
-        ease: [0.25, 0.4, 0.25, 1],
-      },
-    }),
+      y: 0
+    },
   };
 
   return (
@@ -58,39 +56,39 @@ export default function LoginPage() {
       <div className="w-full max-w-md px-6">
         {/* 登录卡片 */}
         <motion.div
-          custom={0}
           variants={fadeUpVariants}
           initial="hidden"
           animate="visible"
+          transition={{ delay: 0.2 }}
           className="glass-surface rounded-xl p-8"
         >
           {/* 头部 */}
           <div className="text-center mb-8">
             <motion.div
-              custom={1}
               variants={fadeUpVariants}
               initial="hidden"
               animate="visible"
+              transition={{ delay: 0.3 }}
               className="w-16 h-16 bg-primary rounded-full flex items-center justify-center mx-auto mb-4"
             >
               <span className="text-2xl font-bold text-primary-foreground">M</span>
             </motion.div>
             
             <motion.h1
-              custom={2}
               variants={fadeUpVariants}
               initial="hidden"
               animate="visible"
+              transition={{ delay: 0.4 }}
               className="text-2xl font-bold text-foreground mb-2"
             >
               欢迎回来
             </motion.h1>
             
             <motion.p
-              custom={3}
               variants={fadeUpVariants}
               initial="hidden"
               animate="visible"
+              transition={{ delay: 0.5 }}
               className="text-muted"
             >
               登录您的 Mnemoflow 账户
@@ -99,10 +97,10 @@ export default function LoginPage() {
 
           {/* 登录表单 */}
           <motion.form
-            custom={4}
             variants={fadeUpVariants}
             initial="hidden"
             animate="visible"
+            transition={{ delay: 0.6 }}
             onSubmit={handleSubmit}
             className="space-y-6"
           >
@@ -206,10 +204,10 @@ export default function LoginPage() {
 
           {/* 底部信息 */}
           <motion.div
-            custom={5}
             variants={fadeUpVariants}
             initial="hidden"
             animate="visible"
+            transition={{ delay: 0.7 }}
             className="mt-6 text-center"
           >
             <p className="text-xs text-muted">

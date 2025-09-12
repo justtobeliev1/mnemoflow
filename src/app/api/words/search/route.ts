@@ -18,7 +18,7 @@ export async function GET(request: NextRequest) {
     const { data: words, error } = await supabase
       .from('words')
       .select('*')
-      .or(`word.ilike.%${query}%,translation.ilike.%${query}%`)
+      .ilike('word', `%${query}%`)
       .order('word')
       .limit(limit)
 

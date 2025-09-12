@@ -31,7 +31,10 @@ export async function GET(request: NextRequest) {
     // 获取最近的搜索历史
     const { data: searchHistory, error } = await supabase
       .from('user_search_history')
-      .select('*')
+      .select(`
+        *,
+        word:words(*)
+      `)
       .eq('user_id', user.id)
       .order('last_searched_at', { ascending: false })
       .limit(limit)
@@ -82,22 +85,26 @@ export async function POST(request: NextRequest) {
     }
 
     const body = await request.json()
-    const { query, resultsCount } = body
+    const { word_id } = body
 
-    if (!query || query.trim().length === 0) {
+    if (!word_id) {
       return NextResponse.json(
-        { error: '搜索查询不能为空' },
+        { error: '单词ID不能为空' },
         { status: 400 }
       )
     }
 
-    // 直接添加搜索记录（简化版本）
+    // 使用upsert更新搜索记录
     const { error } = await supabase
       .from('user_search_history')
-      .insert({
+      .upsert({
         user_id: user.id,
-        query: query.trim(),
-        search_count: resultsCount || 0
+        word_id: word_id,
+        search_count: 1,
+        last_searched_at: new Date().toISOString()
+      }, {
+        onConflict: 'user_id,word_id',
+        ignoreDuplicates: false
       })
 
     if (error) {

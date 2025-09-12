@@ -54,7 +54,7 @@
 
   
 
-- **GET /api/words/{searchTerm}**
+- **GET /api/words/search/{term}**
 
     - **描述**: 根据单词文本查询信息，并采用**异步加载**机制处理 AI 内容 (PRD User Story 1.1)。
 

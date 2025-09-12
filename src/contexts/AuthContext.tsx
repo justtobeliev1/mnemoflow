@@ -28,11 +28,6 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       } else {
         setSession(session);
         setUser(session?.user ?? null);
-        
-        // 如果有有效会话，初始化用户数据
-        if (session?.access_token) {
-          await initializeUserData(session.access_token);
-        }
       }
       setLoading(false);
     };
@@ -45,32 +40,12 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         console.log('认证状态变化:', event, session);
         setSession(session);
         setUser(session?.user ?? null);
-        
-        // 如果是登录事件且有有效会话，初始化用户数据
-        if (event === 'SIGNED_IN' && session?.access_token) {
-          await initializeUserData(session.access_token);
-        }
-        
         setLoading(false);
       }
     );
 
     return () => subscription.unsubscribe();
   }, []);
-
-  // 初始化用户数据
-  const initializeUserData = async (accessToken: string) => {
-    try {
-      await fetch('/api/me/profile/initialize', {
-        method: 'POST',
-        headers: {
-          'Authorization': `Bearer ${accessToken}`
-        }
-      });
-    } catch (error) {
-      console.error('初始化用户数据失败:', error);
-    }
-  };
 
   const signIn = async (email: string, password: string) => {
     const { error } = await supabase.auth.signInWithPassword({

@@ -447,3 +447,72 @@ CREATE TRIGGER on_word_chat_history_updated
   EXECUTE PROCEDURE public.handle_updated_at();
 
 ```
+
+### **5. 自动化流程 (Triggers & Functions)**
+
+**[设计说明]**: 本部分定义了在数据库层面自动执行的关键业务逻辑，以确保数据的一致性和简化应用层代码。
+
+#### **5.1 新用户初始化 (handle_new_user & on_auth_user_created)**
+
+- **目的**: 当一个新用户在 auth.users 表中被创建后，自动为其初始化必要的关联数据（用户档案和默认单词本）。
+    
+- **流程**:
+    
+    1. 在 auth.users 表上创建一个 AFTER INSERT 触发器。
+        
+    2. 触发器调用 handle_new_user() 函数。
+        
+    3. 该函数负责创建 profiles 记录、默认的 word_lists 记录，并更新 profiles 表中的 default_word_list_id。
+        
+- **安全性**:
+    
+    - 该函数以 **SECURITY DEFINER** 模式运行，是为了解决在新用户注册的事务上下文中 auth.uid() 为 NULL 导致 RLS 失败的问题。
+        
+    - 它以数据库所有者（postgres）的权限执行，可以安全地绕过 RLS 策略进行 INSERT 操作。
+        
+    - **此操作是安全的**，因为该函数**只能**由数据库内部的、可信的 auth.users 触发器调用，其所有数据（NEW.id, NEW.email）均来自内部，无法被外部用户调用或注入。
+        
+    - 函数通过 **SET search_path = public** 锁定了 schema 搜索路径，这是 SECURITY DEFINER 的一项**强制性安全措施**，可防止路径劫持攻击。
+        
+
+**SQL 定义**:
+
+codeSQL
+
+```
+-- Function to handle new user initialization
+CREATE OR REPLACE FUNCTION public.handle_new_user()
+RETURNS TRIGGER
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public
+AS $$
+DECLARE
+  new_list_id BIGINT;
+BEGIN
+  -- Create a profile for the new user
+  INSERT INTO public.profiles (id, email)
+  VALUES (NEW.id, NEW.email);
+
+  -- Create a default word list for the new user
+  INSERT INTO public.word_lists (user_id, name)
+  VALUES (NEW.id, '我的单词本')
+  RETURNING id INTO new_list_id;
+
+  -- Update the new user's profile to set this new list as their default
+  UPDATE public.profiles
+  SET default_word_list_id = new_list_id
+  WHERE id = NEW.id;
+  
+  RETURN NEW;
+END;
+$$;
+
+-- Trigger to execute the function after a new user signs up
+CREATE TRIGGER on_auth_user_created
+  AFTER INSERT ON auth.users
+  FOR EACH ROW EXECUTE PROCEDURE public.handle_new_user();
+
+-- Set the owner of the function to the postgres role
+ALTER FUNCTION public.handle_new_user() OWNER TO postgres;
+```
