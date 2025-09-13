@@ -9,6 +9,7 @@ import { WordContent } from '@/components/WordContent';
 import { ActionBar } from '@/components/ActionBar';
 import { WordLoadingState, WordNotFound, WordErrorState } from '@/components/WordLoadingState';
 import { AnimatedBackground } from '@/components/ui/animated-background';
+import { AIChatSidebar } from '@/components/ui/AIChatSidebar';
 import { motion } from 'framer-motion';
 
 interface WordData {
@@ -31,6 +32,7 @@ export default function WordDetailPage({ params }: WordDetailPageProps) {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [notFound, setNotFound] = useState(false);
+  const [isChatOpen, setIsChatOpen] = useState(false);
   const router = useRouter();
   const { session } = useAuth();
   
@@ -49,8 +51,10 @@ export default function WordDetailPage({ params }: WordDetailPageProps) {
     
     try {
       const response = await fetch(`/api/words/search/${encodeURIComponent(decodedWord)}`, {
+        method: 'GET',
         headers: {
-          'Authorization': `Bearer ${session.access_token}`
+          'Authorization': `Bearer ${session.access_token}`,
+          'Content-Type': 'application/json'
         }
       });
       
@@ -59,19 +63,20 @@ export default function WordDetailPage({ params }: WordDetailPageProps) {
         setWordData(data.word);
       } else if (response.status === 404) {
         setNotFound(true);
+      } else if (response.status === 401) {
+        setError('登录已过期，请重新登录');
       } else {
-        const errorData = await response.json();
-        // 确保error是字符串类型，避免React渲染对象错误
-        const errorMessage = typeof errorData === 'string' 
-          ? errorData 
-          : errorData?.message || errorData?.error || '获取单词信息失败';
+        const errorData = await response.json().catch(() => ({ message: '请求失败' }));
+        const errorMessage = errorData?.message || errorData?.error || `请求失败 (${response.status})`;
         setError(String(errorMessage));
       }
     } catch (err) {
       console.error('获取单词信息失败:', err);
-      // 确保error是字符串类型
-      const errorMessage = err instanceof Error ? err.message : '网络连接失败，请检查网络连接';
-      setError(String(errorMessage));
+      if (err instanceof TypeError && err.message.includes('fetch')) {
+        setError('网络连接失败，请检查网络连接');
+      } else {
+        setError('请求失败，请重试');
+      }
     } finally {
       setLoading(false);
     }
@@ -84,11 +89,8 @@ export default function WordDetailPage({ params }: WordDetailPageProps) {
   }, [decodedWord, session]);
   
   const handleBack = () => {
-    if (window.history.length > 1) {
-      router.back();
-    } else {
-      router.push('/'); // 如果没有历史记录，跳转到首页
-    }
+    // 直接返回到主页
+    router.push('/');
   };
   
   const fadeUpVariants = {
@@ -114,73 +116,89 @@ export default function WordDetailPage({ params }: WordDetailPageProps) {
         />
       </motion.div>
       
-      {/* 主要内容区域 - 四边留白较大 */}
-      <main className="relative z-10 max-w-4xl mx-auto px-8 py-12">
-        {loading && (
-          <motion.div
-            variants={fadeUpVariants}
-            initial="hidden"
-            animate="visible"
-            transition={{ duration: 0.8 }}
-          >
-            <WordLoadingState />
-          </motion.div>
-        )}
-        
-        {error && (
-          <motion.div
-            initial={{ opacity: 0, scale: 0.9 }}
-            animate={{ opacity: 1, scale: 1 }}
-            className="fixed top-4 right-4 z-50 max-w-sm"
-          >
-            <div className="glass-surface rounded-lg p-4 border border-red-400/30 bg-red-500/10">
-              <div className="flex items-start gap-3">
-                <div className="text-red-400 mt-1">⚠️</div>
-                <div className="flex-1">
-                  <h4 className="text-sm font-medium text-red-300 mb-1">加载失败</h4>
-                  <p className="text-sm text-red-200/80">{error}</p>
-                  <button
-                    onClick={fetchWord}
-                    className="mt-2 text-xs text-red-300 hover:text-red-200 underline"
-                  >
-                    重试
-                  </button>
-                </div>
+      {/* 主要内容区域 - 上下居中 */}
+      <main className="relative z-10 max-w-4xl mx-auto px-8 min-h-[calc(100vh-120px)] flex items-center justify-center">
+        <div className="w-full">
+          {loading && (
+            <motion.div
+              variants={fadeUpVariants}
+              initial="hidden"
+              animate="visible"
+              transition={{ duration: 0.8 }}
+            >
+              <WordLoadingState />
+            </motion.div>
+          )}
+          
+          {notFound && (
+            <motion.div
+              variants={fadeUpVariants}
+              initial="hidden"
+              animate="visible"
+              transition={{ duration: 0.8 }}
+            >
+              <WordNotFound word={decodedWord} />
+            </motion.div>
+          )}
+          
+          {wordData && (
+            <motion.div
+              variants={fadeUpVariants}
+              initial="hidden"
+              animate="visible"
+              transition={{ duration: 0.8, delay: 0.2 }}
+              className="space-y-8"
+            >
+              <WordContent 
+                word={wordData} 
+                onAIChatClick={() => setIsChatOpen(true)} 
+              />
+            </motion.div>
+          )}
+        </div>
+      </main>
+
+      {wordData && (
+        <AIChatSidebar 
+          isOpen={isChatOpen}
+          onClose={() => setIsChatOpen(false)}
+          word={decodedWord}
+          wordId={wordData.id}
+        />
+      )}
+
+      {/* 错误提示 - 页面底部居中 */}
+      {error && (
+        <motion.div
+          initial={{ opacity: 0, y: 50 }}
+          animate={{ opacity: 1, y: 0 }}
+          exit={{ opacity: 0, y: 50 }}
+          className="fixed bottom-8 left-1/2 transform -translate-x-1/2 z-50 max-w-sm w-full mx-4"
+        >
+          <div className="glass-surface-no-border rounded-lg p-4 bg-red-500/20">
+            <div className="flex items-start gap-3">
+              <div className="flex-1">
+                <h4 className="text-sm font-medium text-red-300 mb-1">加载失败</h4>
+                <p className="text-sm text-red-200/80">
+                  {typeof error === 'string' ? error : '网络连接失败，请重试'}
+                </p>
                 <button
-                  onClick={() => setError(null)}
-                  className="text-red-300/60 hover:text-red-300 text-lg leading-none"
+                  onClick={fetchWord}
+                  className="mt-2 text-xs text-red-300 hover:text-red-200 underline"
                 >
-                  ×
+                  重试
                 </button>
               </div>
+              <button
+                onClick={() => setError(null)}
+                className="text-red-300/60 hover:text-red-300 text-lg leading-none"
+              >
+                ×
+              </button>
             </div>
-          </motion.div>
-        )}
-        
-        {notFound && (
-          <motion.div
-            variants={fadeUpVariants}
-            initial="hidden"
-            animate="visible"
-            transition={{ duration: 0.8 }}
-          >
-            <WordNotFound word={decodedWord} />
-          </motion.div>
-        )}
-        
-        {wordData && (
-          <motion.div
-            variants={fadeUpVariants}
-            initial="hidden"
-            animate="visible"
-            transition={{ duration: 0.8, delay: 0.2 }}
-            className="space-y-8"
-          >
-            <WordContent word={wordData} />
-            <ActionBar word={wordData} />
-          </motion.div>
-        )}
-      </main>
+          </div>
+        </motion.div>
+      )}
     </div>
   );
 }

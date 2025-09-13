@@ -34,7 +34,7 @@ export async function GET(
         const { data: { user: tokenUser }, error } = await supabase.auth.getUser();
         if (error || !tokenUser) {
           console.error('Token认证错误:', error);
-          throw createAuthError('Authorization token无效', '请重新登录');
+          throw createAuthError('Authorization token无效');
         }
         user = tokenUser;
       } catch (tokenError) {

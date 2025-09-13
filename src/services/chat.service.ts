@@ -1,6 +1,7 @@
 import { SupabaseClient } from '@supabase/supabase-js';
 import { SendMessage } from '@/lib/validators/chat.schemas';
 import { createNotFoundError, AppError } from '@/lib/errors';
+import { ChatSession } from '@/lib/validators/chat.schemas';
 
 /**
  * Chat Service - 函数式实现
@@ -45,39 +46,63 @@ async function generateAIResponse(
 }
 
 /**
- * 获取单词的聊天历史
- * 
- * @param args - 包含supabase客户端、用户ID、单词ID和查询参数的参数对象
- * @returns 聊天消息列表
+ * 获取指定单词的聊天历史记录
+ * @param args 包含supabase客户端、用户ID和单词ID的参数对象
+ * @returns 聊天历史消息列表
  */
 export async function getChatHistoryForWord({
   supabase,
   userId,
   wordId,
-  limit = 50,
-  before,
-}: BaseArgs & { wordId: number; limit?: number; before?: number }) {
-  let query = supabase
-    .from('chat_messages')
-    .select('*')
-    .eq('word_id', wordId)
+}: BaseArgs & { wordId: number }) {
+  const { data, error } = await supabase
+    .from('word_chat_history')
+    .select('conversation_log')
     .eq('user_id', userId)
-    .order('created_at', { ascending: false })
-    .limit(limit);
+    .eq('word_id', wordId)
+    .single();
 
-  // 如果指定了before参数，用于分页
-  if (before) {
-    query = query.lt('id', before);
+  if (error && error.code !== 'PGRST116') { // PGRST116 = no rows found
+    console.error('Get chat history error:', error);
+    throw new AppError('Failed to retrieve chat history', 500);
   }
 
-  const { data, error } = await query;
+  return data;
+}
+
+/**
+ * 获取指定单词的所有聊天会话
+ * @param args 包含supabase客户端和用户ID的参数对象
+ * @returns 聊天会话列表
+ */
+export async function getChatSessions({
+  supabase,
+  userId,
+}: BaseArgs): Promise<ChatSession[]> {
+  const { data: chatHistory, error } = await supabase
+    .from('word_chat_history')
+    .select(`
+      word_id,
+      updated_at,
+      words (
+        word
+      )
+    `)
+    .eq('user_id', userId)
+    .order('updated_at', { ascending: false });
 
   if (error) {
-    throw new AppError(`获取聊天历史失败: ${error.message}`, 500);
+    throw new AppError(`获取聊天会话失败: ${error.message}`, 500);
   }
 
-  // 返回时按时间正序排列（最早的消息在前）
-  return (data || []).reverse();
+  // The type from Supabase might be different, so we map it to our ChatSession type
+  const sessions: ChatSession[] = (chatHistory as any[])?.map(item => ({
+    word_id: item.word_id,
+    word: item.words.word,
+    updated_at: item.updated_at,
+  })) || [];
+
+  return sessions;
 }
 
 /**
@@ -176,63 +201,51 @@ export async function sendMessageForWord({
   };
 }
 
-/**
- * 获取用户的聊天会话列表
- * 
- * @param args - 包含supabase客户端和用户ID的参数对象
- * @returns 聊天会话列表
- */
-export async function getChatSessionsForUser({
+export async function saveChatHistory({
   supabase,
   userId,
-  limit = 20,
-}: BaseArgs & { limit?: number }) {
-  const { data, error } = await supabase
-    .from('chat_messages')
-    .select(`
-      word_id,
-      created_at,
-      words:word_id (
-        id,
-        word,
-        definition,
-        phonetic
-      )
-    `)
+  wordId,
+  messages,
+}: BaseArgs & { wordId: number; messages: { role: 'user' | 'assistant', content: string }[] }) {
+  // 1) 先查是否存在
+  const { data: existing, error: findError } = await supabase
+    .from('word_chat_history')
+    .select('id')
     .eq('user_id', userId)
-    .order('created_at', { ascending: false });
+    .eq('word_id', wordId)
+    .maybeSingle();
 
-  if (error) {
-    throw new AppError(`获取聊天会话失败: ${error.message}`, 500);
+  if (findError) {
+    console.error('Find chat history error:', findError);
+    throw new AppError('Failed to query chat history', 500);
   }
 
-  // 按单词分组，获取每个单词的最新消息时间和消息数量
-  const sessionMap = new Map();
-  
-  (data || []).forEach((message: any) => {
-    const wordId = message.word_id;
-    if (!sessionMap.has(wordId)) {
-      sessionMap.set(wordId, {
-        word_id: wordId,
-        word: message.words,
-        message_count: 0,
-        last_message_at: message.created_at,
-      });
-    }
-    
-    const session = sessionMap.get(wordId);
-    session.message_count++;
-    
-    // 更新最新消息时间
-    if (session.last_message_at < message.created_at) {
-      session.last_message_at = message.created_at;
-    }
-  });
+  if (existing?.id) {
+    // 2) 存在则更新
+    const { data: updated, error: updError } = await (supabase as any)
+      .from('word_chat_history')
+      .update({ conversation_log: messages, updated_at: new Date().toISOString() })
+      .eq('id', existing.id)
+      .select()
+      .single();
 
-  // 转换为数组并按最后消息时间排序
-  const sessions = Array.from(sessionMap.values())
-    .sort((a, b) => new Date(b.last_message_at).getTime() - new Date(a.last_message_at).getTime())
-    .slice(0, limit);
+    if (updError) {
+      console.error('Update chat history error:', updError);
+      throw new AppError('Failed to update chat history', 500);
+    }
+    return updated;
+  } else {
+    // 3) 不存在则插入
+    const { data: inserted, error: insError } = await (supabase as any)
+      .from('word_chat_history')
+      .insert({ user_id: userId, word_id: wordId, conversation_log: messages, updated_at: new Date().toISOString() })
+      .select()
+      .single();
 
-  return sessions;
+    if (insError) {
+      console.error('Insert chat history error:', insError);
+      throw new AppError('Failed to insert chat history', 500);
+    }
+    return inserted;
+  }
 }

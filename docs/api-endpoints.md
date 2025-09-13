@@ -180,31 +180,39 @@
 - **响应**: 重新生成任务确认
 - **实现文件**: `src/app/api/mnemonics/[wordId]/route.ts`
 
-### 💬 AI 聊天功能
+### 💬 AI 聊天功能（已替换实现）
 
-#### 18. 获取聊天历史
-- **端点**: `GET /api/words/{wordId}/chats`
-- **功能**: 获取指定单词的聊天历史记录
+#### 18. AI 问答（SSE 流式）
+- **端点**: `POST /api/ai/chat`
+- **功能**: 向大模型发送 Prompt，按片段流式返回 Markdown 回答
 - **认证**: 必须
-- **路径参数**: `wordId` - 单词ID
+- **请求体**:
+  - `word`: string   // 当前学习单词（用于系统提示词）
+  - `prompt`: string // 用户问题
+- **响应**: `text/event-stream`（SSE），持续返回文本片段
+- **失败**: 直接透传上游错误（形如 `{ error: { code, status, model, body } }`）
+- **实现文件**: `src/app/api/ai/chat/route.ts`
+- **环境变量**（.env.local）:
+  - `DASHSCOPE_API_KEY`: 阿里云百炼 API Key（必填）
+  - `DASHSCOPE_MODEL_ID`: 模型 ID（如 `qwen2.5-7b-instruct-1m`，必填）
+  - `DASHSCOPE_BASE_URL`: 可选，默认 `https://dashscope.aliyuncs.com`
+
+#### 19. 单词会话历史（获取/保存）
+- **端点 A**: `GET /api/me/chat-history`
+- **功能**: 获取当前用户在某个单词下的整段聊天历史
+- **认证**: 必须
 - **查询参数**:
-  - `limit` (可选): 返回结果数量，默认 50，最大 200
-  - `before` (可选): 返回指定消息ID之前的消息，用于分页
-- **响应**: 聊天历史消息列表
-- **实现文件**: `src/app/api/words/[wordId]/chats/route.ts`
-- **服务层**: `src/services/chat.service.ts`
-- **验证器**: `src/lib/validators/chat.schemas.ts`
-
-#### 19. 发送聊天消息
-- **端点**: `POST /api/words/{wordId}/chats`
-- **功能**: 向指定单词发送聊天消息并获取AI响应
+  - `wordId`: number // 单词ID
+- **响应**: `{ conversation_log: Array<{ role: 'user'|'assistant', content: string }> }` 或空对象
+- **端点 B**: `POST /api/me/chat-history`
+- **功能**: 保存整段聊天历史（不存在则插入，存在则更新）
 - **认证**: 必须
-- **路径参数**: `wordId` - 单词ID
-- **请求体**: 消息数据 (Zod 验证)
-  - `content`: 消息内容
-  - `context` (可选): 额外上下文信息
-- **响应**: 用户消息和AI响应
-- **实现文件**: `src/app/api/words/[wordId]/chats/route.ts`
+- **请求体**:
+  - `wordId`: number
+  - `messages`: Array<{ role: 'user'|'assistant', content: string }>
+- **实现文件**: `src/app/api/me/chat-history/route.ts`
+- **服务层**: `src/services/chat.service.ts`
+- **说明**: 表结构 `word_chat_history(user_id, word_id, conversation_log, updated_at)`；RLS 限制用户仅能读写自己的历史；服务层采用“先查→存在则更新，否则插入”的两段式保存逻辑。
 
 ### 📢 反馈系统
 
@@ -277,7 +285,6 @@ src/
 
 ## 更新日志
 
-### 2024-01-XX
 - ✅ 完成所有19个API端点的实现
 - ✅ 修复路由冲突：将 `GET /api/words/{searchTerm}` 移动到 `GET /api/words/search/{searchTerm}`
 - ✅ 采用函数式架构，使用参数注入模式

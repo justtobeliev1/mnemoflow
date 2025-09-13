@@ -4,6 +4,7 @@ import { PronunciationButton } from './PronunciationButton';
 import { parsePhonetic, formatPhonetic } from '@/utils/phonetic';
 import { parseDefinition } from '@/utils/definition';
 import { parseTags, getTagColorClass } from '@/utils/tags';
+import { ActionBar } from './ActionBar';
 
 interface WordData {
   id: number;
@@ -16,20 +17,21 @@ interface WordData {
 
 interface WordContentProps {
   word: WordData;
+  onAIChatClick: () => void;
 }
 
-export function WordContent({ word }: WordContentProps) {
+export function WordContent({ word, onAIChatClick }: WordContentProps) {
   const phonetic = parsePhonetic(word.phonetic);
   const definitions = parseDefinition(word.definition);
   const tags = parseTags(word.tags);
   
   return (
-    <div className="glass-surface rounded-xl p-8 space-y-8">
+    <div className="glass-surface-no-border rounded-xl p-8 space-y-8 max-w-3xl mx-auto">
       {/* 单词标题和发音 - 居左对齐 */}
       <div className="space-y-4">
-        <h1 className="text-4xl font-bold text-foreground">{word.word}</h1>
+        <h1 className="text-5xl font-bold text-foreground">{word.word}</h1>
         
-        <div className="flex flex-wrap items-center gap-4">
+        <div className="flex flex-wrap items-center gap-6">
           {phonetic.uk && (
             <div className="flex items-center gap-2">
               <span className="text-sm text-muted">英</span>
@@ -59,7 +61,12 @@ export function WordContent({ word }: WordContentProps) {
       
       {/* 释义部分 - 使用留白分隔 */}
       <div className="space-y-4">
-        <h2 className="text-xl font-semibold text-foreground">释义</h2>
+        <div className="flex items-start justify-between">
+          <h2 className="text-xl font-semibold text-foreground">释义</h2>
+          <div className="flex items-center gap-4 -mt-[6px]">
+            <ActionBar word={word} onAIChatClick={onAIChatClick} />
+          </div>
+        </div>
         
         <div className="space-y-3">
           {definitions.length > 0 ? (

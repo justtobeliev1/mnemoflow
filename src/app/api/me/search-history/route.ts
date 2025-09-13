@@ -1,8 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { validateAuth } from '@/lib/supabase-server';
 import { getSearchHistoryForUser } from '@/services/word.service';
 import { SearchHistoryQuerySchema } from '@/lib/validators/word.schemas';
 import { handleApiError } from '@/lib/errors';
+import { createSupabaseFromRequest } from '@/lib/supabase-server';
 
 /**
  * GET /api/me/search-history
@@ -18,26 +18,32 @@ import { handleApiError } from '@/lib/errors';
  */
 export async function GET(request: NextRequest) {
   try {
-    // 1. 验证用户认证状态
-    const { supabase, user } = await validateAuth();
+    // 1. 从请求头中提取token并创建Supabase客户端
+    const supabase = createSupabaseFromRequest(request);
+    
+    // 2. 获取用户信息
+    const { data: { user }, error: userError } = await supabase.auth.getUser();
+    if (userError || !user) {
+      throw userError;
+    }
 
-    // 2. 解析查询参数
+    // 3. 解析查询参数
     const { searchParams } = new URL(request.url);
     const queryParams = {
       limit: searchParams.get('limit') || undefined,
     };
 
-    // 3. 验证查询参数
+    // 4. 验证查询参数
     const validatedQuery = SearchHistoryQuerySchema.parse(queryParams);
 
-    // 4. 使用service函数获取搜索历史
+    // 5. 使用service函数获取搜索历史
     const searchHistory = await getSearchHistoryForUser({
       supabase,
       userId: user.id,
       limit: validatedQuery.limit,
     });
 
-    // 5. 成功返回搜索历史列表
+    // 6. 成功返回搜索历史列表
     return NextResponse.json({
       search_history: searchHistory,
       total: searchHistory.length,

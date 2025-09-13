@@ -6,6 +6,38 @@ import { Database } from './database.types';
 import { createAuthError } from './errors';
 
 /**
+ * a a fetch a a a a AbortControllera a a a a
+ * @param resource fetch a URL
+ * @param options fetch a a a a timeout a a (a a)
+ * @returns Promise<Response>
+ */
+async function fetchWithTimeout(
+  resource: RequestInfo | URL,
+  options: RequestInit & { timeout?: number } = {}
+): Promise<Response> {
+  const { timeout = 25000 } = options; // a a 25 a
+
+  const controller = new AbortController();
+  const id = setTimeout(() => controller.abort(), timeout);
+
+  try {
+    const response = await fetch(resource, {
+      ...options,
+      signal: controller.signal,
+    });
+    return response;
+  } catch (error) {
+    // a a a a fetch a AbortErrora a a a
+    if (error instanceof DOMException && error.name === 'AbortError') {
+      throw new Error(`Request timed out after ${timeout} ms`);
+    }
+    throw error;
+  } finally {
+    clearTimeout(id);
+  }
+}
+
+/**
  * 为API Routes创建Supabase客户端的推荐方式
  * 使用新的Supabase SSR包，自动处理cookies和会话
  */
@@ -77,13 +109,14 @@ export function createServerSupabaseClient(accessToken: string) {
   const client = createClient<Database>(supabaseUrl, supabaseKey, {
     auth: {
       autoRefreshToken: false,
-      persistSession: false
+      persistSession: false,
     },
     global: {
       headers: {
-        Authorization: `Bearer ${accessToken}`
-      }
-    }
+        Authorization: `Bearer ${accessToken}`,
+      },
+      fetch: fetchWithTimeout,
+    },
   });
 
   return client;
