@@ -7,9 +7,7 @@ import { z } from 'zod';
 /**
  * 消息角色枚举
  */
-export const MessageRoleSchema = z.enum(['user', 'assistant'], {
-  errorMap: () => ({ message: '消息角色必须是: user, assistant 中的一个' })
-});
+export const MessageRoleSchema = z.enum(['user', 'assistant']);
 
 /**
  * 发送消息的验证Schema

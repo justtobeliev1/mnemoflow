@@ -20,8 +20,12 @@ function HomePageContent() {
   const [isLoggingOut, setIsLoggingOut] = useState(false);
 
   const handleSearch = (query: string) => {
-    console.log("搜索:", query);
-    // TODO: 实现搜索逻辑
+    const trimmedQuery = query.trim();
+    if (!trimmedQuery) return;
+    
+    console.log("搜索:", trimmedQuery);
+    // 跳转到单词详情页面
+    router.push(`/words/${encodeURIComponent(trimmedQuery)}`);
   };
 
   const handleLearnClick = () => {

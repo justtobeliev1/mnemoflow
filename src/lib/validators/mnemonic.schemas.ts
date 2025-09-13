@@ -7,16 +7,12 @@ import { z } from 'zod';
 /**
  * 助记内容类型枚举
  */
-export const MnemonicTypeSchema = z.enum(['story', 'association', 'visual', 'phonetic'], {
-  errorMap: () => ({ message: '助记类型必须是: story, association, visual, phonetic 中的一个' })
-});
+export const MnemonicTypeSchema = z.enum(['story', 'association', 'visual', 'phonetic']);
 
 /**
  * 助记内容状态枚举
  */
-export const MnemonicStatusSchema = z.enum(['generating', 'completed', 'failed'], {
-  errorMap: () => ({ message: '助记状态必须是: generating, completed, failed 中的一个' })
-});
+export const MnemonicStatusSchema = z.enum(['generating', 'completed', 'failed']);
 
 /**
  * 助记内容生成请求Schema

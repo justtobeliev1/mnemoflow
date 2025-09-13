@@ -7,16 +7,12 @@ import { z } from 'zod';
 /**
  * 反馈类型枚举
  */
-export const FeedbackTypeSchema = z.enum(['bug', 'feature', 'improvement', 'other'], {
-  errorMap: () => ({ message: '反馈类型必须是: bug, feature, improvement, other 中的一个' })
-});
+export const FeedbackTypeSchema = z.enum(['bug', 'feature', 'improvement', 'other']);
 
 /**
  * 反馈优先级枚举
  */
-export const FeedbackPrioritySchema = z.enum(['low', 'medium', 'high', 'urgent'], {
-  errorMap: () => ({ message: '优先级必须是: low, medium, high, urgent 中的一个' })
-});
+export const FeedbackPrioritySchema = z.enum(['low', 'medium', 'high', 'urgent']);
 
 /**
  * 创建反馈的验证Schema

@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { validateAuth } from '@/lib/supabase-server';
+import { validateAuth, createServerSupabaseClient } from '@/lib/supabase-server';
 import { findWordByText, recordSearchHistory } from '@/services/word.service';
-import { handleApiError, createValidationError } from '@/lib/errors';
+import { handleApiError, createValidationError, createAuthError } from '@/lib/errors';
 
 /**
  * GET /api/words/search/{searchTerm}
@@ -21,8 +21,35 @@ export async function GET(
   { params }: { params: { searchTerm: string } }
 ) {
   try {
-    // 1. 验证用户认证状态
-    const { supabase, user } = await validateAuth();
+    // 1. 验证用户认证状态 - 优先使用Authorization header，回退到cookies
+    let supabase;
+    let user;
+    
+    const authHeader = request.headers.get('authorization');
+    if (authHeader && authHeader.startsWith('Bearer ')) {
+      // 使用Authorization header中的token
+      try {
+        const token = authHeader.replace('Bearer ', '');
+        supabase = createServerSupabaseClient(token);
+        const { data: { user: tokenUser }, error } = await supabase.auth.getUser();
+        if (error || !tokenUser) {
+          console.error('Token认证错误:', error);
+          throw createAuthError('Authorization token无效', '请重新登录');
+        }
+        user = tokenUser;
+      } catch (tokenError) {
+        console.error('Token认证失败，尝试cookie认证:', tokenError);
+        // 如果token认证失败，尝试cookie认证
+        const authResult = await validateAuth();
+        supabase = authResult.supabase;
+        user = authResult.user;
+      }
+    } else {
+      // 使用cookies认证
+      const authResult = await validateAuth();
+      supabase = authResult.supabase;
+      user = authResult.user;
+    }
 
     // 2. 验证和解码searchTerm参数
     const searchTerm = decodeURIComponent(params.searchTerm).trim();

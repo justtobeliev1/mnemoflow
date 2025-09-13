@@ -7,9 +7,7 @@ import { z } from 'zod';
 /**
  * FSRS复习结果枚举
  */
-export const FSRSRatingSchema = z.enum(['again', 'hard', 'good', 'easy'], {
-  errorMap: () => ({ message: '复习结果必须是: again, hard, good, easy 中的一个' })
-});
+export const FSRSRatingSchema = z.enum(['again', 'hard', 'good', 'easy']);
 
 /**
  * 复习进度更新的验证Schema
