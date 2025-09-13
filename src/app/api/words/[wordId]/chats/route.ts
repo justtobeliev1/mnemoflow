@@ -1,187 +1,127 @@
-import { NextRequest, NextResponse } from 'next/server'
-import { createServerSupabaseClient } from '@/lib/supabase-server'
+import { NextRequest, NextResponse } from 'next/server';
+import { validateAuth } from '@/lib/supabase-server';
+import { getChatHistoryForWord, sendMessageForWord } from '@/services/chat.service';
+import { ChatHistoryQuerySchema, SendMessageSchema } from '@/lib/validators/chat.schemas';
+import { handleApiError, createValidationError } from '@/lib/errors';
 
-// 获取单词的AI聊天历史
+/**
+ * GET /api/words/{wordId}/chats
+ * 
+ * 获取指定单词的聊天历史记录
+ * 支持分页查询
+ * 
+ * @param request - 包含查询参数的请求
+ * @param params - 路由参数，包含wordId
+ * @returns 200 OK - 返回聊天历史列表
+ * @returns 400 Bad Request - wordId参数或查询参数无效
+ * @returns 401 Unauthorized - 用户未登录
+ * @returns 500 Internal Server Error - 数据库查询失败
+ */
 export async function GET(
   request: NextRequest,
   { params }: { params: { wordId: string } }
 ) {
   try {
-    const authHeader = request.headers.get('authorization')
-    if (!authHeader) {
-      return NextResponse.json(
-        { error: '需要登录' },
-        { status: 401 }
-      )
+    // 1. 验证用户认证状态
+    const { supabase, user } = await validateAuth();
+
+    // 2. 验证和解析wordId参数
+    const wordId = parseInt(params.wordId, 10);
+    if (isNaN(wordId) || wordId <= 0) {
+      throw createValidationError('无效的单词ID', 'wordId必须是正整数');
     }
 
-    const token = authHeader.replace('Bearer ', '')
-    const supabase = createServerSupabaseClient(token)
-    const { data: { user }, error: authError } = await supabase.auth.getUser()
+    // 3. 解析查询参数
+    const { searchParams } = new URL(request.url);
+    const queryParams = {
+      limit: searchParams.get('limit') || undefined,
+      before: searchParams.get('before') || undefined,
+    };
+    const validatedQuery = ChatHistoryQuerySchema.parse(queryParams);
 
-    if (authError || !user) {
-      return NextResponse.json(
-        { error: '用户认证失败' },
-        { status: 401 }
-      )
-    }
+    // 4. 获取聊天历史
+    const chatHistory = await getChatHistoryForWord({
+      supabase,
+      userId: user.id,
+      wordId,
+      limit: validatedQuery.limit,
+      before: validatedQuery.before,
+    });
 
-    const { wordId } = params
-    const wordIdNum = parseInt(wordId)
-
-    if (isNaN(wordIdNum)) {
-      return NextResponse.json(
-        { error: '无效的单词ID' },
-        { status: 400 }
-      )
-    }
-
-    // 获取聊天历史
-    const { data: chatHistory, error } = await supabase
-      .from('word_chat_history')
-      .select('*')
-      .eq('user_id', user.id)
-      .eq('word_id', wordIdNum)
-      .single()
-
-    if (error && error.code !== 'PGRST116') { // PGRST116 = no rows returned
-      console.error('获取聊天历史时出错:', error)
-      return NextResponse.json(
-        { error: '获取聊天历史失败' },
-        { status: 500 }
-      )
-    }
-
+    // 5. 成功返回聊天历史
     return NextResponse.json({
-      chatHistory: chatHistory || null
-    })
+      messages: chatHistory,
+      total: chatHistory.length,
+      word_id: wordId,
+    }, { status: 200 });
 
   } catch (error) {
-    console.error('API错误:', error)
-    return NextResponse.json(
-      { error: '服务器内部错误' },
-      { status: 500 }
-    )
+    return handleApiError(error);
   }
 }
 
-// 向AI助手发送新消息
+/**
+ * POST /api/words/{wordId}/chats
+ * 
+ * 向指定单词发送聊天消息并获取AI响应
+ * 
+ * @param request - 包含消息内容的请求体
+ * @param params - 路由参数，包含wordId
+ * @returns 201 Created - 返回用户消息和AI响应
+ * @returns 400 Bad Request - 请求数据验证失败或wordId无效
+ * @returns 401 Unauthorized - 用户未登录
+ * @returns 404 Not Found - 单词不存在
+ * @returns 500 Internal Server Error - 数据库操作失败
+ */
 export async function POST(
   request: NextRequest,
   { params }: { params: { wordId: string } }
 ) {
   try {
-    const authHeader = request.headers.get('authorization')
-    if (!authHeader) {
-      return NextResponse.json(
-        { error: '需要登录' },
-        { status: 401 }
-      )
+    // 1. 验证用户认证状态
+    const { supabase, user } = await validateAuth();
+
+    // 2. 验证和解析wordId参数
+    const wordId = parseInt(params.wordId, 10);
+    if (isNaN(wordId) || wordId <= 0) {
+      throw createValidationError('无效的单词ID', 'wordId必须是正整数');
     }
 
-    const token = authHeader.replace('Bearer ', '')
-    const supabase = createServerSupabaseClient(token)
-    const { data: { user }, error: authError } = await supabase.auth.getUser()
+    // 3. 解析并验证请求体
+    const body = await request.json();
+    const validatedData = SendMessageSchema.parse(body);
 
-    if (authError || !user) {
-      return NextResponse.json(
-        { error: '用户认证失败' },
-        { status: 401 }
-      )
-    }
+    // 4. 发送消息并获取AI响应
+    const { userMessage, aiMessage } = await sendMessageForWord({
+      supabase,
+      userId: user.id,
+      wordId,
+      data: validatedData,
+    });
 
-    const { wordId } = params
-    const wordIdNum = parseInt(wordId)
-
-    if (isNaN(wordIdNum)) {
-      return NextResponse.json(
-        { error: '无效的单词ID' },
-        { status: 400 }
-      )
-    }
-
-    const body = await request.json()
-    const { message } = body
-
-    if (!message || message.trim().length === 0) {
-      return NextResponse.json(
-        { error: '消息内容不能为空' },
-        { status: 400 }
-      )
-    }
-
-    // 检查单词是否存在
-    const { data: word, error: wordError } = await supabase
-      .from('words')
-      .select('id, word')
-      .eq('id', wordIdNum)
-      .single()
-
-    if (wordError || !word) {
-      return NextResponse.json(
-        { error: '单词不存在' },
-        { status: 404 }
-      )
-    }
-
-    // 获取现有聊天历史
-    const { data: existingChat } = await supabase
-      .from('word_chat_history')
-      .select('conversation_log')
-      .eq('user_id', user.id)
-      .eq('word_id', wordIdNum)
-      .single()
-
-    // TODO: 这里应该调用AI服务获取回复
-    const aiResponse = `关于单词 "${word.word}" 的回复：这是一个模拟的AI回复。`
-
-    // 构建新的对话日志
-    const existingLog = existingChat?.conversation_log || []
-    const newConversationLog = [
-      ...existingLog,
-      {
-        role: 'user',
-        content: message.trim(),
-        timestamp: new Date().toISOString()
-      },
-      {
-        role: 'assistant',
-        content: aiResponse,
-        timestamp: new Date().toISOString()
-      }
-    ]
-
-    // 更新或创建聊天记录
-    const { data: updatedChat, error } = await supabase
-      .from('word_chat_history')
-      .upsert({
-        user_id: user.id,
-        word_id: wordIdNum,
-        conversation_log: newConversationLog
-      }, {
-        onConflict: 'user_id,word_id'
-      })
-      .select()
-      .single()
-
-    if (error) {
-      console.error('更新聊天记录时出错:', error)
-      return NextResponse.json(
-        { error: '发送消息失败' },
-        { status: 500 }
-      )
-    }
-
+    // 5. 成功返回消息对话
     return NextResponse.json({
-      chatHistory: updatedChat,
-      aiResponse
-    })
+      message: '消息发送成功',
+      conversation: {
+        user_message: {
+          id: userMessage.id,
+          role: userMessage.role,
+          content: userMessage.content,
+          context: userMessage.context,
+          created_at: userMessage.created_at,
+        },
+        ai_message: aiMessage ? {
+          id: aiMessage.id,
+          role: aiMessage.role,
+          content: aiMessage.content,
+          response_time: aiMessage.response_time,
+          created_at: aiMessage.created_at,
+        } : null,
+      },
+      word_id: wordId,
+    }, { status: 201 });
 
   } catch (error) {
-    console.error('API错误:', error)
-    return NextResponse.json(
-      { error: '服务器内部错误' },
-      { status: 500 }
-    )
+    return handleApiError(error);
   }
 }

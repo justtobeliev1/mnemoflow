@@ -1,145 +1,175 @@
-import { NextRequest, NextResponse } from 'next/server'
-import { createServerSupabaseClient } from '@/lib/supabase-server'
+import { NextRequest, NextResponse } from 'next/server';
+import { validateAuth } from '@/lib/supabase-server';
+import { getMnemonicForWord, createMnemonicForWord, regenerateMnemonicForWord } from '@/services/mnemonic.service';
+import { MnemonicGenerateRequestSchema, MnemonicPollQuerySchema } from '@/lib/validators/mnemonic.schemas';
+import { handleApiError, createValidationError, createNotFoundError } from '@/lib/errors';
 
-// 获取助记内容
+/**
+ * GET /api/mnemonics/{wordId}
+ * 
+ * 获取单词的助记内容
+ * 支持轮询机制，当内容正在生成时会等待完成
+ * 
+ * @param request - 包含查询参数的请求
+ * @param params - 路由参数，包含wordId
+ * @returns 200 OK - 返回助记内容
+ * @returns 202 Accepted - 内容正在生成中（轮询超时时）
+ * @returns 400 Bad Request - wordId参数无效
+ * @returns 401 Unauthorized - 用户未登录
+ * @returns 404 Not Found - 助记内容不存在
+ * @returns 500 Internal Server Error - 数据库查询失败
+ */
 export async function GET(
   request: NextRequest,
   { params }: { params: { wordId: string } }
 ) {
   try {
-    const authHeader = request.headers.get('authorization')
-    if (!authHeader) {
-      return NextResponse.json(
-        { error: '需要登录' },
-        { status: 401 }
-      )
+    // 1. 验证用户认证状态
+    const { supabase, user } = await validateAuth();
+
+    // 2. 验证和解析wordId参数
+    const wordId = parseInt(params.wordId, 10);
+    if (isNaN(wordId) || wordId <= 0) {
+      throw createValidationError('无效的单词ID', 'wordId必须是正整数');
     }
 
-    const token = authHeader.replace('Bearer ', '')
-    const supabase = createServerSupabaseClient(token)
-    const { data: { user }, error: authError } = await supabase.auth.getUser()
+    // 3. 解析查询参数
+    const { searchParams } = new URL(request.url);
+    const queryParams = {
+      timeout: searchParams.get('timeout') || undefined,
+    };
+    const validatedQuery = MnemonicPollQuerySchema.parse(queryParams);
 
-    if (authError || !user) {
-      return NextResponse.json(
-        { error: '用户认证失败' },
-        { status: 401 }
-      )
+    // 4. 获取助记内容
+    let mnemonic = await getMnemonicForWord({
+      supabase,
+      userId: user.id,
+      wordId,
+    });
+
+    if (!mnemonic) {
+      throw createNotFoundError('助记内容');
     }
 
-    const { wordId } = params
-    const wordIdNum = parseInt(wordId)
+    // 5. 如果内容正在生成中，进行轮询等待
+    if (mnemonic.status === 'generating') {
+      const startTime = Date.now();
+      const timeout = validatedQuery.timeout;
 
-    if (isNaN(wordIdNum)) {
-      return NextResponse.json(
-        { error: '无效的单词ID' },
-        { status: 400 }
-      )
+      while (Date.now() - startTime < timeout && mnemonic.status === 'generating') {
+        // 等待1秒后重新查询
+        await new Promise(resolve => setTimeout(resolve, 1000));
+        
+        mnemonic = await getMnemonicForWord({
+          supabase,
+          userId: user.id,
+          wordId,
+        });
+
+        if (!mnemonic) {
+          throw createNotFoundError('助记内容');
+        }
+      }
+
+      // 如果超时后仍在生成中，返回202状态
+      if (mnemonic.status === 'generating') {
+        return NextResponse.json({
+          message: '助记内容正在生成中，请稍后再试',
+          mnemonic: {
+            id: mnemonic.id,
+            word_id: mnemonic.word_id,
+            type: mnemonic.type,
+            status: mnemonic.status,
+            created_at: mnemonic.created_at,
+          }
+        }, { status: 202 });
+      }
     }
 
-    // 查询助记内容
-    const { data: mnemonic, error } = await supabase
-      .from('word_mnemonics')
-      .select('*')
-      .eq('word_id', wordIdNum)
-      .single()
-
-    if (error || !mnemonic) {
-      // 助记内容还在生成中或不存在
-      return NextResponse.json({
-        status: 'loading'
-      })
-    }
-
-    return NextResponse.json(mnemonic)
+    // 6. 成功返回助记内容
+    return NextResponse.json({
+      mnemonic: {
+        id: mnemonic.id,
+        word_id: mnemonic.word_id,
+        type: mnemonic.type,
+        content: mnemonic.content,
+        status: mnemonic.status,
+        generation_time: mnemonic.generation_time,
+        user_context: mnemonic.user_context,
+        created_at: mnemonic.created_at,
+        updated_at: mnemonic.updated_at,
+        word: mnemonic.words,
+      }
+    }, { status: 200 });
 
   } catch (error) {
-    console.error('API错误:', error)
-    return NextResponse.json(
-      { error: '服务器内部错误' },
-      { status: 500 }
-    )
+    return handleApiError(error);
   }
 }
 
-// 重新生成助记内容
+/**
+ * PUT /api/mnemonics/{wordId}
+ * 
+ * 重新生成单词的助记内容
+ * 
+ * @param request - 包含重新生成参数的请求体
+ * @param params - 路由参数，包含wordId
+ * @returns 200 OK - 返回重新生成的助记内容记录
+ * @returns 400 Bad Request - 请求数据验证失败或wordId无效
+ * @returns 401 Unauthorized - 用户未登录
+ * @returns 404 Not Found - 助记内容不存在
+ * @returns 500 Internal Server Error - 数据库操作失败
+ */
 export async function PUT(
   request: NextRequest,
   { params }: { params: { wordId: string } }
 ) {
   try {
-    const authHeader = request.headers.get('authorization')
-    if (!authHeader) {
-      return NextResponse.json(
-        { error: '需要登录' },
-        { status: 401 }
-      )
+    // 1. 验证用户认证状态
+    const { supabase, user } = await validateAuth();
+
+    // 2. 验证和解析wordId参数
+    const wordId = parseInt(params.wordId, 10);
+    if (isNaN(wordId) || wordId <= 0) {
+      throw createValidationError('无效的单词ID', 'wordId必须是正整数');
     }
 
-    const token = authHeader.replace('Bearer ', '')
-    const supabase = createServerSupabaseClient(token)
-    const { data: { user }, error: authError } = await supabase.auth.getUser()
-
-    if (authError || !user) {
-      return NextResponse.json(
-        { error: '用户认证失败' },
-        { status: 401 }
-      )
+    // 3. 解析请求体（可选参数）
+    let requestData = {};
+    try {
+      const body = await request.text();
+      if (body.trim()) {
+        requestData = JSON.parse(body);
+      }
+    } catch (parseError) {
+      // 忽略JSON解析错误，使用默认参数
     }
 
-    const { wordId } = params
-    const wordIdNum = parseInt(wordId)
+    // 4. 重新生成助记内容
+    const updatedMnemonic = await regenerateMnemonicForWord({
+      supabase,
+      userId: user.id,
+      wordId,
+      type: (requestData as any).type,
+      userContext: (requestData as any).user_context,
+    });
 
-    if (isNaN(wordIdNum)) {
-      return NextResponse.json(
-        { error: '无效的单词ID' },
-        { status: 400 }
-      )
-    }
-
-    const body = await request.json()
-    const { prompt } = body
-
-    // TODO: 这里应该调用LLM重新生成助记内容
-    // 目前先返回一个模拟的响应
-    const mockMnemonicContent = {
-      blueprint: "重新生成的助记蓝图",
-      scene_segments: [
-        {
-          segment: "场景片段1",
-          description: "详细描述1"
-        }
-      ]
-    }
-
-    // 更新或插入助记内容
-    const { data: mnemonic, error } = await supabase
-      .from('word_mnemonics')
-      .upsert({
-        word_id: wordIdNum,
-        content: mockMnemonicContent,
-        version: 1,
-        created_by: user.id
-      }, {
-        onConflict: 'word_id'
-      })
-      .select()
-      .single()
-
-    if (error) {
-      console.error('更新助记内容时出错:', error)
-      return NextResponse.json(
-        { error: '更新助记内容失败' },
-        { status: 500 }
-      )
-    }
-
-    return NextResponse.json(mnemonic)
+    // 5. 成功返回更新后的助记内容记录
+    return NextResponse.json({
+      message: '助记内容重新生成已开始',
+      mnemonic: {
+        id: updatedMnemonic?.id,
+        word_id: updatedMnemonic?.word_id,
+        type: updatedMnemonic?.type,
+        status: updatedMnemonic?.status,
+        user_context: updatedMnemonic?.user_context,
+        created_at: updatedMnemonic?.created_at,
+        updated_at: updatedMnemonic?.updated_at,
+        word: updatedMnemonic?.words,
+      }
+    }, { status: 200 });
 
   } catch (error) {
-    console.error('API错误:', error)
-    return NextResponse.json(
-      { error: '服务器内部错误' },
-      { status: 500 }
-    )
+    return handleApiError(error);
   }
 }

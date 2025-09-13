@@ -132,7 +132,9 @@ export class ToastManager {
 
   subscribe(listener: () => void) {
     this.listeners.add(listener)
-    return () => this.listeners.delete(listener)
+    return () => {
+      this.listeners.delete(listener)
+    }
   }
 
   private notifyListeners() {
@@ -149,7 +151,7 @@ export function useToast() {
     const unsubscribe = manager.subscribe(() => {
       setToasts(manager.getToasts())
     })
-    return () => unsubscribe()
+    return unsubscribe
   }, [manager])
 
   const showToast = (toast: Omit<ToastProps, 'onClose'>) => {

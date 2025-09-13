@@ -1,127 +1,49 @@
-import { NextRequest, NextResponse } from 'next/server'
-import { supabase } from '@/lib/supabase'
+import { NextRequest, NextResponse } from 'next/server';
+import { validateAuth } from '@/lib/supabase-server';
+import { getSearchHistoryForUser } from '@/services/word.service';
+import { SearchHistoryQuerySchema } from '@/lib/validators/word.schemas';
+import { handleApiError } from '@/lib/errors';
 
-// 获取用户搜索历史
+/**
+ * GET /api/me/search-history
+ * 
+ * 获取用户的搜索历史记录
+ * 支持limit查询参数来限制返回结果数量
+ * 
+ * @param request - 包含查询参数的请求
+ * @returns 200 OK - 返回搜索历史列表
+ * @returns 400 Bad Request - 查询参数验证失败
+ * @returns 401 Unauthorized - 用户未登录
+ * @returns 500 Internal Server Error - 数据库查询失败
+ */
 export async function GET(request: NextRequest) {
   try {
-    // 从请求头获取授权信息
-    const authHeader = request.headers.get('authorization')
-    if (!authHeader) {
-      return NextResponse.json(
-        { error: '需要登录' },
-        { status: 401 }
-      )
-    }
+    // 1. 验证用户认证状态
+    const { supabase, user } = await validateAuth();
 
-    // 设置Supabase客户端的访问令牌
-    const token = authHeader.replace('Bearer ', '')
-    const { data: { user }, error: authError } = await supabase.auth.getUser(token)
+    // 2. 解析查询参数
+    const { searchParams } = new URL(request.url);
+    const queryParams = {
+      limit: searchParams.get('limit') || undefined,
+    };
 
-    if (authError || !user) {
-      console.error('认证错误:', authError)
-      return NextResponse.json(
-        { error: '用户认证失败' },
-        { status: 401 }
-      )
-    }
+    // 3. 验证查询参数
+    const validatedQuery = SearchHistoryQuerySchema.parse(queryParams);
 
-    const { searchParams } = new URL(request.url)
-    const limit = parseInt(searchParams.get('limit') || '10')
+    // 4. 使用service函数获取搜索历史
+    const searchHistory = await getSearchHistoryForUser({
+      supabase,
+      userId: user.id,
+      limit: validatedQuery.limit,
+    });
 
-    // 获取最近的搜索历史
-    const { data: searchHistory, error } = await supabase
-      .from('user_search_history')
-      .select(`
-        *,
-        word:words(*)
-      `)
-      .eq('user_id', user.id)
-      .order('last_searched_at', { ascending: false })
-      .limit(limit)
-
-    if (error) {
-      console.error('获取搜索历史时出错:', error)
-      return NextResponse.json(
-        { error: '获取搜索历史失败' },
-        { status: 500 }
-      )
-    }
-
+    // 5. 成功返回搜索历史列表
     return NextResponse.json({
-      history: searchHistory || []
-    })
+      search_history: searchHistory,
+      total: searchHistory.length,
+    }, { status: 200 });
 
   } catch (error) {
-    console.error('API错误:', error)
-    return NextResponse.json(
-      { error: '服务器内部错误' },
-      { status: 500 }
-    )
-  }
-}
-
-// 添加搜索记录
-export async function POST(request: NextRequest) {
-  try {
-    // 从请求头获取授权信息
-    const authHeader = request.headers.get('authorization')
-    if (!authHeader) {
-      return NextResponse.json(
-        { error: '需要登录' },
-        { status: 401 }
-      )
-    }
-
-    // 设置Supabase客户端的访问令牌
-    const token = authHeader.replace('Bearer ', '')
-    const { data: { user }, error: authError } = await supabase.auth.getUser(token)
-
-    if (authError || !user) {
-      console.error('认证错误:', authError)
-      return NextResponse.json(
-        { error: '用户认证失败' },
-        { status: 401 }
-      )
-    }
-
-    const body = await request.json()
-    const { word_id } = body
-
-    if (!word_id) {
-      return NextResponse.json(
-        { error: '单词ID不能为空' },
-        { status: 400 }
-      )
-    }
-
-    // 使用upsert更新搜索记录
-    const { error } = await supabase
-      .from('user_search_history')
-      .upsert({
-        user_id: user.id,
-        word_id: word_id,
-        search_count: 1,
-        last_searched_at: new Date().toISOString()
-      }, {
-        onConflict: 'user_id,word_id',
-        ignoreDuplicates: false
-      })
-
-    if (error) {
-      console.error('添加搜索历史时出错:', error)
-      return NextResponse.json(
-        { error: '添加搜索历史失败' },
-        { status: 500 }
-      )
-    }
-
-    return NextResponse.json({ success: true })
-
-  } catch (error) {
-    console.error('API错误:', error)
-    return NextResponse.json(
-      { error: '服务器内部错误' },
-      { status: 500 }
-    )
+    return handleApiError(error);
   }
 }

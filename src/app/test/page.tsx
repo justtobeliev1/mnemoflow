@@ -16,7 +16,7 @@ export default function TestPage() {
     }
 
     try {
-      const response = await fetch('/api/me/word-lists-simple', {
+      const response = await fetch('/api/me/word-lists', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -46,7 +46,7 @@ export default function TestPage() {
     }
 
     try {
-      const response = await fetch('/api/me/word-lists-simple', {
+      const response = await fetch('/api/me/word-lists', {
         headers: {
           'Authorization': `Bearer ${session.access_token}`
         }
@@ -54,9 +54,9 @@ export default function TestPage() {
 
       if (response.ok) {
         const data = await response.json()
-        setWordLists(data.wordLists || [])
+        setWordLists(data.word_lists || [])
         success('获取单词本成功！')
-        console.log('单词本列表:', data.wordLists)
+        console.log('单词本列表:', data.word_lists)
       } else {
         const errorData = await response.json()
         error(errorData.error || '获取失败')
@@ -96,7 +96,7 @@ export default function TestPage() {
         <ul className="mt-2 space-y-2">
           {wordLists.map((list, index) => (
             <li key={index} className="p-2 bg-gray-100 rounded">
-              {list.name} (ID: {list.id}, 单词数: {list.wordCount})
+              {list.name} (ID: {list.id}, 单词数: {list.word_count})
             </li>
           ))}
         </ul>

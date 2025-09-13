@@ -1,89 +1,62 @@
-import { NextRequest, NextResponse } from 'next/server'
-import { createServerSupabaseClient } from '@/lib/supabase-server'
+import { NextRequest, NextResponse } from 'next/server';
+import { validateAuth } from '@/lib/supabase-server';
+import { createFeedbackForUser } from '@/services/feedback.service';
+import { CreateFeedbackSchema } from '@/lib/validators/feedback.schemas';
+import { handleApiError } from '@/lib/errors';
 
-// 提交助记内容反馈
+/**
+ * POST /api/feedback
+ * 
+ * 创建用户反馈
+ * 用户可以提交bug报告、功能请求、改进建议等反馈
+ * 
+ * @param request - 包含反馈数据的请求体
+ * @returns 201 Created - 返回创建的反馈记录
+ * @returns 400 Bad Request - 请求数据验证失败
+ * @returns 401 Unauthorized - 用户未登录
+ * @returns 500 Internal Server Error - 数据库操作失败
+ */
 export async function POST(request: NextRequest) {
   try {
-    const authHeader = request.headers.get('authorization')
-    if (!authHeader) {
-      return NextResponse.json(
-        { error: '需要登录' },
-        { status: 401 }
-      )
-    }
+    // 1. 验证用户认证状态
+    const { supabase, user } = await validateAuth();
 
-    const token = authHeader.replace('Bearer ', '')
-    const supabase = createServerSupabaseClient(token)
-    const { data: { user }, error: authError } = await supabase.auth.getUser()
+    // 2. 解析并验证请求体
+    const body = await request.json();
+    
+    // 3. 自动添加用户代理信息
+    const userAgent = request.headers.get('user-agent');
+    const referer = request.headers.get('referer');
+    
+    const feedbackData = {
+      ...body,
+      user_agent: userAgent || undefined,
+      url: referer || body.url || undefined,
+    };
+    
+    const validatedData = CreateFeedbackSchema.parse(feedbackData);
 
-    if (authError || !user) {
-      return NextResponse.json(
-        { error: '用户认证失败' },
-        { status: 401 }
-      )
-    }
+    // 4. 使用service函数创建反馈
+    const newFeedback = await createFeedbackForUser({
+      supabase,
+      userId: user.id,
+      data: validatedData,
+    });
 
-    const body = await request.json()
-    const { word_mnemonic_id, rating } = body
-
-    if (!word_mnemonic_id || rating === undefined) {
-      return NextResponse.json(
-        { error: '助记内容ID和评分不能为空' },
-        { status: 400 }
-      )
-    }
-
-    if (![1, -1].includes(rating)) {
-      return NextResponse.json(
-        { error: '评分必须是1（有用）或-1（无用）' },
-        { status: 400 }
-      )
-    }
-
-    // 检查助记内容是否存在
-    const { data: mnemonic, error: mnemonicError } = await supabase
-      .from('word_mnemonics')
-      .select('id')
-      .eq('id', word_mnemonic_id)
-      .single()
-
-    if (mnemonicError || !mnemonic) {
-      return NextResponse.json(
-        { error: '助记内容不存在' },
-        { status: 404 }
-      )
-    }
-
-    // 提交反馈（使用upsert处理重复反馈）
-    const { data: feedback, error } = await supabase
-      .from('mnemonic_feedback')
-      .upsert({
-        user_id: user.id,
-        word_mnemonic_id,
-        rating
-      }, {
-        onConflict: 'user_id,word_mnemonic_id'
-      })
-      .select()
-      .single()
-
-    if (error) {
-      console.error('提交反馈时出错:', error)
-      return NextResponse.json(
-        { error: '提交反馈失败' },
-        { status: 500 }
-      )
-    }
-
+    // 5. 成功返回创建的反馈记录
     return NextResponse.json({
-      feedback
-    }, { status: 201 })
+      message: '反馈提交成功，感谢您的宝贵意见！',
+      feedback: {
+        id: newFeedback.id,
+        type: newFeedback.type,
+        title: newFeedback.title,
+        priority: newFeedback.priority,
+        status: newFeedback.status,
+        created_at: newFeedback.created_at,
+      }
+    }, { status: 201 });
 
   } catch (error) {
-    console.error('API错误:', error)
-    return NextResponse.json(
-      { error: '服务器内部错误' },
-      { status: 500 }
-    )
+    return handleApiError(error);
   }
 }

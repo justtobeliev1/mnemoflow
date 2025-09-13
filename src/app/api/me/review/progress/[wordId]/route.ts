@@ -1,107 +1,57 @@
-import { NextRequest, NextResponse } from 'next/server'
-import { createServerSupabaseClient } from '@/lib/supabase-server'
+import { NextRequest, NextResponse } from 'next/server';
+import { validateAuth } from '@/lib/supabase-server';
+import { updateWordProgressForUser } from '@/services/review.service';
+import { ReviewProgressUpdateSchema } from '@/lib/validators/review.schemas';
+import { handleApiError, createValidationError } from '@/lib/errors';
 
-// 更新用户单词学习进度
+/**
+ * PATCH /api/me/review/progress/{wordId}
+ * 
+ * 更新单词的学习进度（FSRS算法）
+ * 根据用户的复习结果更新单词的稳定度、难度和下次复习时间
+ * 
+ * @param request - 包含复习结果的请求体
+ * @param params - 路由参数，包含wordId
+ * @returns 200 OK - 返回更新后的学习进度记录
+ * @returns 400 Bad Request - 请求数据验证失败或wordId无效
+ * @returns 401 Unauthorized - 用户未登录
+ * @returns 404 Not Found - 学习记录不存在
+ * @returns 500 Internal Server Error - 数据库操作失败
+ */
 export async function PATCH(
   request: NextRequest,
   { params }: { params: { wordId: string } }
 ) {
   try {
-    const authHeader = request.headers.get('authorization')
-    if (!authHeader) {
-      return NextResponse.json(
-        { error: '需要登录' },
-        { status: 401 }
-      )
+    // 1. 验证用户认证状态
+    const { supabase, user } = await validateAuth();
+
+    // 2. 验证和解析wordId参数
+    const wordId = parseInt(params.wordId, 10);
+    if (isNaN(wordId) || wordId <= 0) {
+      throw createValidationError('无效的单词ID', 'wordId必须是正整数');
     }
 
-    const token = authHeader.replace('Bearer ', '')
-    const supabase = createServerSupabaseClient(token)
-    const { data: { user }, error: authError } = await supabase.auth.getUser()
+    // 3. 解析并验证请求体
+    const body = await request.json();
+    const validatedData = ReviewProgressUpdateSchema.parse(body);
 
-    if (authError || !user) {
-      return NextResponse.json(
-        { error: '用户认证失败' },
-        { status: 401 }
-      )
-    }
+    // 4. 使用service函数更新学习进度
+    const updatedProgress = await updateWordProgressForUser({
+      supabase,
+      userId: user.id,
+      wordId,
+      data: validatedData,
+    });
 
-    const { wordId } = params
-    const wordIdNum = parseInt(wordId)
-
-    if (isNaN(wordIdNum)) {
-      return NextResponse.json(
-        { error: '无效的单词ID' },
-        { status: 400 }
-      )
-    }
-
-    const body = await request.json()
-    const { word_id, new_fsrs_state } = body
-
-    if (word_id !== wordIdNum) {
-      return NextResponse.json(
-        { error: '路径参数与请求体中的单词ID不匹配' },
-        { status: 400 }
-      )
-    }
-
-    if (!new_fsrs_state) {
-      return NextResponse.json(
-        { error: '新的FSRS状态不能为空' },
-        { status: 400 }
-      )
-    }
-
-    const {
-      stability,
-      difficulty,
-      due,
-      lapses,
-      state,
-      last_review
-    } = new_fsrs_state
-
-    // 更新学习进度
-    const { data: updatedProgress, error } = await supabase
-      .from('user_word_progress')
-      .update({
-        stability,
-        difficulty,
-        due: new Date(due).toISOString(),
-        lapses,
-        state,
-        last_review: last_review ? new Date(last_review).toISOString() : null
-      })
-      .eq('user_id', user.id)
-      .eq('word_id', wordIdNum)
-      .select()
-      .single()
-
-    if (error) {
-      console.error('更新学习进度时出错:', error)
-      return NextResponse.json(
-        { error: '更新学习进度失败' },
-        { status: 500 }
-      )
-    }
-
-    if (!updatedProgress) {
-      return NextResponse.json(
-        { error: '未找到该单词的学习记录' },
-        { status: 404 }
-      )
-    }
-
+    // 5. 成功返回更新后的学习进度
     return NextResponse.json({
-      progress: updatedProgress
-    })
+      message: '学习进度更新成功',
+      progress: updatedProgress,
+      rating: validatedData.rating,
+    }, { status: 200 });
 
   } catch (error) {
-    console.error('API错误:', error)
-    return NextResponse.json(
-      { error: '服务器内部错误' },
-      { status: 500 }
-    )
+    return handleApiError(error);
   }
 }

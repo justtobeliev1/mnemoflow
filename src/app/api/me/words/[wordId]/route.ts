@@ -1,133 +1,99 @@
-import { NextRequest, NextResponse } from 'next/server'
-import { createServerSupabaseClient } from '@/lib/supabase-server'
+import { NextRequest, NextResponse } from 'next/server';
+import { validateAuth } from '@/lib/supabase-server';
+import { removeWordForUser, moveWordForUser } from '@/services/word.service';
+import { WordMoveSchema } from '@/lib/validators/word.schemas';
+import { handleApiError, createValidationError } from '@/lib/errors';
 
-// 从用户学习列表中移除单词
+/**
+ * DELETE /api/me/words/{wordId}
+ * 
+ * 从用户学习列表中移除单词
+ * 
+ * @param params - 路由参数，包含wordId
+ * @returns 200 OK - 删除成功
+ * @returns 400 Bad Request - wordId参数无效
+ * @returns 401 Unauthorized - 用户未登录
+ * @returns 404 Not Found - 单词记录不存在
+ * @returns 500 Internal Server Error - 数据库操作失败
+ */
 export async function DELETE(
   request: NextRequest,
   { params }: { params: { wordId: string } }
 ) {
   try {
-    const authHeader = request.headers.get('authorization')
-    if (!authHeader) {
-      return NextResponse.json(
-        { error: '需要登录' },
-        { status: 401 }
-      )
+    // 1. 验证用户认证状态
+    const { supabase, user } = await validateAuth();
+
+    // 2. 验证和解析wordId参数
+    const wordId = parseInt(params.wordId, 10);
+    if (isNaN(wordId) || wordId <= 0) {
+      throw createValidationError('无效的单词ID', 'wordId必须是正整数');
     }
 
-    const token = authHeader.replace('Bearer ', '')
-    const supabase = createServerSupabaseClient(token)
-    const { data: { user }, error: authError } = await supabase.auth.getUser()
+    // 3. 使用service函数移除单词
+    const result = await removeWordForUser({
+      supabase,
+      userId: user.id,
+      wordId,
+    });
 
-    if (authError || !user) {
-      return NextResponse.json(
-        { error: '用户认证失败' },
-        { status: 401 }
-      )
-    }
-
-    const { wordId } = params
-    const wordIdNum = parseInt(wordId)
-
-    if (isNaN(wordIdNum)) {
-      return NextResponse.json(
-        { error: '无效的单词ID' },
-        { status: 400 }
-      )
-    }
-
-    // 删除学习进度记录
-    const { error } = await supabase
-      .from('user_word_progress')
-      .delete()
-      .eq('user_id', user.id)
-      .eq('word_id', wordIdNum)
-
-    if (error) {
-      console.error('移除单词时出错:', error)
-      return NextResponse.json(
-        { error: '移除单词失败' },
-        { status: 500 }
-      )
-    }
-
-    return NextResponse.json({ success: true })
+    // 4. 成功返回删除结果
+    return NextResponse.json({
+      message: '单词移除成功',
+      success: result.success
+    }, { status: 200 });
 
   } catch (error) {
-    console.error('API错误:', error)
-    return NextResponse.json(
-      { error: '服务器内部错误' },
-      { status: 500 }
-    )
+    return handleApiError(error);
   }
 }
 
-// 移动单词到另一个单词本
+/**
+ * PATCH /api/me/words/{wordId}
+ * 
+ * 移动单词到其他单词本
+ * 
+ * @param request - 包含移动数据的请求体
+ * @param params - 路由参数，包含wordId
+ * @returns 200 OK - 返回更新后的学习进度记录
+ * @returns 400 Bad Request - 请求数据验证失败或wordId无效
+ * @returns 401 Unauthorized - 用户未登录
+ * @returns 404 Not Found - 单词记录或目标单词本不存在
+ * @returns 500 Internal Server Error - 数据库操作失败
+ */
 export async function PATCH(
   request: NextRequest,
   { params }: { params: { wordId: string } }
 ) {
   try {
-    const authHeader = request.headers.get('authorization')
-    if (!authHeader) {
-      return NextResponse.json(
-        { error: '需要登录' },
-        { status: 401 }
-      )
+    // 1. 验证用户认证状态
+    const { supabase, user } = await validateAuth();
+
+    // 2. 验证和解析wordId参数
+    const wordId = parseInt(params.wordId, 10);
+    if (isNaN(wordId) || wordId <= 0) {
+      throw createValidationError('无效的单词ID', 'wordId必须是正整数');
     }
 
-    const token = authHeader.replace('Bearer ', '')
-    const supabase = createServerSupabaseClient(token)
-    const { data: { user }, error: authError } = await supabase.auth.getUser()
+    // 3. 解析并验证请求体
+    const body = await request.json();
+    const validatedData = WordMoveSchema.parse(body);
 
-    if (authError || !user) {
-      return NextResponse.json(
-        { error: '用户认证失败' },
-        { status: 401 }
-      )
-    }
+    // 4. 使用service函数移动单词
+    const updatedProgress = await moveWordForUser({
+      supabase,
+      userId: user.id,
+      wordId,
+      data: validatedData,
+    });
 
-    const { wordId } = params
-    const wordIdNum = parseInt(wordId)
-
-    if (isNaN(wordIdNum)) {
-      return NextResponse.json(
-        { error: '无效的单词ID' },
-        { status: 400 }
-      )
-    }
-
-    const body = await request.json()
-    const { new_list_id } = body
-
-    // 更新单词本归属
-    const { data: updatedProgress, error } = await supabase
-      .from('user_word_progress')
-      .update({
-        word_list_id: new_list_id
-      })
-      .eq('user_id', user.id)
-      .eq('word_id', wordIdNum)
-      .select()
-      .single()
-
-    if (error) {
-      console.error('移动单词时出错:', error)
-      return NextResponse.json(
-        { error: '移动单词失败' },
-        { status: 500 }
-      )
-    }
-
+    // 5. 成功返回更新后的学习进度记录
     return NextResponse.json({
+      message: '单词移动成功',
       progress: updatedProgress
-    })
+    }, { status: 200 });
 
   } catch (error) {
-    console.error('API错误:', error)
-    return NextResponse.json(
-      { error: '服务器内部错误' },
-      { status: 500 }
-    )
+    return handleApiError(error);
   }
 }
