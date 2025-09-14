@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { validateAuth } from '@/lib/supabase-server';
-import { removeWordForUser, moveWordForUser } from '@/services/word.service';
+import { removeWordForUser, moveWordForUser, getProgressForWord } from '@/services/word.service';
 import { WordMoveSchema } from '@/lib/validators/word.schemas';
 import { handleApiError, createValidationError } from '@/lib/errors';
 
@@ -43,6 +43,29 @@ export async function DELETE(
       success: result.success
     }, { status: 200 });
 
+  } catch (error) {
+    return handleApiError(error);
+  }
+}
+
+/**
+ * GET /api/me/words/{wordId}
+ * 
+ * 查询当前单词的学习进度（用于判断是否已收藏及归属的单词本）
+ */
+export async function GET(
+  request: NextRequest,
+  { params }: { params: { wordId: string } }
+) {
+  try {
+    const { supabase, user } = await validateAuth();
+    const wordId = parseInt(params.wordId, 10);
+    if (isNaN(wordId) || wordId <= 0) {
+      throw createValidationError('无效的单词ID', 'wordId必须是正整数');
+    }
+
+    const progress = await getProgressForWord({ supabase, userId: user.id, wordId });
+    return NextResponse.json(progress || {});
   } catch (error) {
     return handleApiError(error);
   }

@@ -21,7 +21,7 @@ Mnemoflow是一款基于认知科学和AI的智能化英语词汇学习应用。
 - **后端即服务 (BaaS)**: [Supabase](https://supabase.io/) (PostgreSQL, Auth, 自动生成API)
 - **UI**: [React](https://reactjs.org/) 搭配 [shadcn/ui](https://ui.shadcn.com/)
 - **样式**: [Tailwind CSS](https://tailwindcss.com/)
-- **状态管理**: [React Query (@tanstack/react-query)](https://tanstack.com/query/latest)
+- **数据获取与缓存**: [SWR](https://swr.vercel.app/)（用于单词本、收藏弹窗的缓存与乐观更新）
 - **部署**: [Vercel](https://vercel.com/)
 - **AI集成**: Next.js API 路由 + 阿里云百炼 DashScope REST（SSE流式）。
 
@@ -107,6 +107,15 @@ mnemoflow/
 - `POST /api/me/chat-history`：保存整段会话（不存在则插入，存在则更新）。
 
 详见 `docs/api-endpoints.md`。
+
+## 📚 单词本与收藏功能说明
+
+- 单词本列表与详情页：`/word-lists` 与 `/word-lists/[listId]`
+- 创建/重命名单词本：对话框操作采用乐观更新；成功自动关闭并 Toast 提示；失败保持或重新打开对话框并显示定制文案。
+- 删除单词本：二次确认；删除后不会删除学习进度，所有关联 `user_word_progress.word_list_id` 仅置为 `NULL`。
+- 收藏按钮：统一使用提供的实心 SVG 图标，不反映状态；点击弹出单词本选择器（缓存优先加载），勾选后立即乐观更新；若已在其它单词本，将弹出“移动确认”对话框。
+- 结构化错误码：服务端统一返回 `error_code`，如 `WORDLIST_NAME_CONFLICT`，前端据此展示定制提示。
+- 认证修复：前端使用 `@supabase/ssr` 的 `createBrowserClient`，保证 App Router 下 API 路由能读取到 Cookie 会话，避免 401。
 
 ### 前端复用组件
 

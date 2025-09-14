@@ -44,8 +44,6 @@ export async function GET(
       supabase,
       userId: user.id,
       wordId,
-      limit: validatedQuery.limit,
-      before: validatedQuery.before,
     });
 
     // 5. 成功返回聊天历史

@@ -199,6 +199,27 @@ export async function moveWordForUser({
 }
 
 /**
+ * 获取某个单词的收藏/学习进度（用于判断归属的单词本）
+ */
+export async function getProgressForWord({
+  supabase,
+  userId,
+  wordId,
+}: BaseArgs & { wordId: number }) {
+  const { data, error } = await (supabase as any)
+    .from('user_word_progress')
+    .select('id, word_list_id')
+    .eq('user_id', userId)
+    .eq('word_id', wordId)
+    .maybeSingle();
+
+  if (error && error.code !== 'PGRST116') {
+    throw new AppError(`查询学习记录失败: ${error.message}`, 500);
+  }
+  return data || null;
+}
+
+/**
  * 获取用户的搜索历史
  * 
  * @param args - 包含supabase客户端、用户ID和查询限制的参数对象

@@ -138,7 +138,7 @@ export async function POST(req: NextRequest) {
     });
   } catch (error) {
     if (error instanceof z.ZodError) {
-      return new Response(JSON.stringify({ error: error.errors }), { status: 400 });
+      return new Response(JSON.stringify({ error: error.issues }), { status: 400 });
     }
     return handleApiError(error);
   }

@@ -70,7 +70,7 @@
 
 #### 11. 删除单词本
 - **端点**: `DELETE /api/me/word-lists/{listId}`
-- **功能**: 删除指定单词本及其学习进度
+- **功能**: 删除指定单词本；保留学习进度，仅将相关 `user_word_progress.word_list_id` 置为 `NULL`
 - **认证**: 必须
 - **路径参数**: `listId` - 单词本ID
 - **响应**: 删除确认
@@ -106,6 +106,14 @@
 - **请求体**: 移动数据 (Zod 验证)
   - `new_list_id`: 新单词本ID
 - **响应**: 更新后的学习进度记录
+- **实现文件**: `src/app/api/me/words/[wordId]/route.ts`
+
+#### 20. 获取单词收藏状态
+- **端点**: `GET /api/me/words/{wordId}`
+- **功能**: 获取指定单词在 `user_word_progress` 中当前归属的单词本 ID（`word_list_id`）
+- **认证**: 必须
+- **路径参数**: `wordId` - 单词ID
+- **响应**: `{ word_list_id: number | null }`
 - **实现文件**: `src/app/api/me/words/[wordId]/route.ts`
 
 #### 3. 获取搜索历史
@@ -237,6 +245,8 @@
 - **参数注入模式**: 所有服务函数接收 `{ supabase, userId }` 参数
 - **纯函数设计**: 服务层函数无状态，易于测试和维护
 - **统一错误处理**: 使用 `handleApiError` 统一处理所有API错误
+  - 服务端返回结构化错误码 `error_code`，示例：`WORDLIST_NAME_CONFLICT`
+  - 前端基于错误码展示定制化文案与回退（对话框保持/复开）
 
 ### 🔒 类型安全
 - **Zod 验证**: 所有输入数据都经过严格的运行时类型验证

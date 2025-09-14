@@ -67,7 +67,9 @@ export async function getChatHistoryForWord({
     throw new AppError('Failed to retrieve chat history', 500);
   }
 
-  return data;
+  // 若不存在记录，返回空数组，以避免调用方对 null 取 length 报错
+  const history = (data as any)?.conversation_log || [];
+  return history as Array<{ role: 'user' | 'assistant'; content: string }>;
 }
 
 /**
