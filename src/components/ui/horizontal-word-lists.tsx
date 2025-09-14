@@ -6,13 +6,14 @@ import { WordListCard } from "./word-list-card";
 import { cn } from "@/lib/utils";
 
 interface WordList {
+  id: number;
   name: string;
   wordCount: number;
 }
 
 interface HorizontalWordListsProps {
   wordLists: WordList[];
-  onWordListClick: (listName: string) => void;
+  onWordListClick: (listId: number) => void;
   onCreateWordList: () => void;
 }
 
@@ -55,7 +56,13 @@ const HorizontalWordLists: React.FC<HorizontalWordListsProps> = ({
 
   return (
     <section className="py-8">
-      <h2 className="text-2xl font-bold text-foreground mb-6">单词本</h2>
+      <h2
+        className="text-2xl font-bold text-foreground mb-6 cursor-pointer hover:text-primary"
+        onClick={() => onWordListClick(-1)}
+        title="点击进入单词本管理页"
+      >
+        单词本
+      </h2>
       
       {/* 限制宽度的容器 */}
       <div className="max-w-5xl mx-auto">
@@ -94,9 +101,10 @@ const HorizontalWordLists: React.FC<HorizontalWordListsProps> = ({
             {wordLists.map((list, index) => (
               <div key={index} className="flex-shrink-0 w-48">
                 <WordListCard
+                  id={list.id}
                   name={list.name}
                   wordCount={list.wordCount}
-                  onClick={() => onWordListClick(list.name)}
+                  onClick={() => onWordListClick(list.id)}
                   className="h-24"
                 />
               </div>

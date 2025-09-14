@@ -42,10 +42,22 @@ export async function getWordListsForUser({ supabase, userId }: BaseArgs) {
     throw new AppError(`获取单词本列表失败: ${error.message}`, 500);
   }
 
-  // 转换数据格式，将count结果转换为数字
+  // 转换数据格式：Supabase 关系聚合 `user_word_progress(count)` 返回形如 [{ count: N }]
+  // 兼容多种返回形态，稳健解析为实际数量
+  const toCount = (wc: any): number => {
+    if (typeof wc === 'number') return wc;
+    if (Array.isArray(wc)) {
+      const first = wc[0];
+      if (first && typeof first.count === 'number') return first.count;
+      return wc.length;
+    }
+    if (wc && typeof wc.count === 'number') return wc.count;
+    return 0;
+  };
+
   const wordListsWithCount = data.map(list => ({
     ...list,
-    word_count: Array.isArray(list.word_count) ? list.word_count.length : 0
+    word_count: toCount((list as any).word_count)
   }));
 
   return wordListsWithCount;
@@ -136,6 +148,18 @@ export async function createWordListForUser({
   userId,
   data,
 }: BaseArgs & { data: WordListCreateData }) {
+  // 防重名：同一用户下名称唯一（精确匹配，已在上层做 trim）
+  const { data: existingByName } = await supabase
+    .from('word_lists')
+    .select('id')
+    .eq('user_id', userId)
+    .eq('name', data.name)
+    .maybeSingle();
+
+  if (existingByName) {
+    throw new AppError('单词本名称已存在', 409, '请使用不同的名称', 'WORDLIST_NAME_CONFLICT');
+  }
+
   const { data: newWordList, error } = await supabase
     .from('word_lists')
     .insert({
@@ -164,6 +188,19 @@ export async function updateWordListForUser({
   listId,
   data,
 }: BaseArgs & { listId: number; data: WordListUpdateData }) {
+  // 防重名：除当前 listId 外，同一用户下名称唯一
+  const { data: nameConflict } = await supabase
+    .from('word_lists')
+    .select('id')
+    .eq('user_id', userId)
+    .eq('name', data.name)
+    .neq('id', listId)
+    .maybeSingle();
+
+  if (nameConflict) {
+    throw new AppError('单词本名称已存在', 409, '请使用不同的名称', 'WORDLIST_NAME_CONFLICT');
+  }
+
   const { data: updatedWordList, error } = await supabase
     .from('word_lists')
     .update(data)
@@ -202,10 +239,21 @@ export async function deleteWordListForUser({
     .single();
 
   if (profile?.default_word_list_id === listId) {
-    throw new AppError('不能删除默认单词本', 400, '请先设置其他单词本为默认，再删除此单词本');
+    throw new AppError('不能删除默认单词本', 400, '请先设置其他单词本为默认，再删除此单词本', 'WORDLIST_IS_DEFAULT');
   }
 
-  // 执行删除操作
+  // 将该列表下的 progress 记录的 word_list_id 置空（不删除记录）
+  const { error: clearError } = await (supabase as any)
+    .from('user_word_progress')
+    .update({ word_list_id: null })
+    .eq('user_id', userId)
+    .eq('word_list_id', listId);
+
+  if (clearError) {
+    throw new AppError(`更新学习记录失败: ${clearError.message}`, 500);
+  }
+
+  // 删除空的列表实体
   const { error } = await supabase
     .from('word_lists')
     .delete()

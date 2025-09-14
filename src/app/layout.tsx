@@ -1,6 +1,11 @@
 import type { Metadata } from "next";
 import "./globals.css";
 import { AuthProvider } from "@/contexts/AuthContext";
+import { ToastContainer } from "@/components/ui/toast-notification";
+import dynamic from 'next/dynamic';
+
+// 动态加载背景动画组件，仅在客户端渲染，避免与服务端 HTML 不匹配
+const AnimatedBackground = dynamic(() => import('@/components/ui/animated-background').then(m => m.AnimatedBackground), { ssr: false });
 
 export const metadata: Metadata = {
   title: "Mnemoflow - 智能英语学习助手",
@@ -16,7 +21,13 @@ export default function RootLayout({
     <html lang="zh-CN">
       <body className="font-sans antialiased">
         <AuthProvider>
-          {children}
+          <div className="min-h-screen bg-background relative">
+            <AnimatedBackground />
+            <div className="relative z-10">
+              {children}
+            </div>
+          </div>
+          <ToastContainer />
         </AuthProvider>
       </body>
     </html>

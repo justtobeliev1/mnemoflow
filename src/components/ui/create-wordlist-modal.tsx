@@ -169,7 +169,7 @@ export function CreateWordListModal({
                   <button
                     type="submit"
                     disabled={loading || !name.trim()}
-                    className="flex-1 py-2.5 px-4 bg-gradient-to-r from-indigo-300 via-white to-rose-300 text-gray-800 font-semibold rounded-lg transition-all duration-200 disabled:opacity-50 disabled:cursor-not-allowed hover:shadow-lg hover:scale-[1.02] flex items-center justify-center gap-2"
+                    className="flex-1 py-2.5 px-4 bg-gradient-to-r from-indigo-200 via-white to-rose-200 text-gray-800 font-semibold rounded-lg transition-all duration-200 disabled:opacity-50 disabled:cursor-not-allowed hover:shadow-lg hover:scale-[1.02] flex items-center justify-center gap-2"
                   >
                     {loading ? (
                       <>

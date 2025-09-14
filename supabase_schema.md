@@ -260,6 +260,16 @@ ON DELETE SET NULL;
 
 ```
 
+**唯一约束：同一用户下名称唯一**
+
+codeSQL
+
+```
+-- 确保每个用户的单词本名称不可重复（区分大小写）
+ALTER TABLE public.word_lists
+ADD CONSTRAINT word_lists_user_name_unique UNIQUE (user_id, name);
+```
+
   
 
 **user_word_progress Table (核心枢纽)**
@@ -496,7 +506,7 @@ BEGIN
 
   -- Create a default word list for the new user
   INSERT INTO public.word_lists (user_id, name)
-  VALUES (NEW.id, '我的单词本')
+  VALUES (NEW.id, '默认单词本')
   RETURNING id INTO new_list_id;
 
   -- Update the new user's profile to set this new list as their default

@@ -9,6 +9,7 @@ export interface ApiError {
     statusCode: number;
     message: string;
     details?: string;
+    error_code?: string;
   };
 }
 
@@ -18,12 +19,14 @@ export interface ApiError {
 export class AppError extends Error {
   public statusCode: number;
   public details?: string;
+  public errorCode?: string;
 
-  constructor(message: string, statusCode: number = 500, details?: string) {
+  constructor(message: string, statusCode: number = 500, details?: string, errorCode?: string) {
     super(message);
     this.name = 'AppError';
     this.statusCode = statusCode;
     this.details = details;
+    this.errorCode = errorCode;
   }
 }
 
@@ -42,6 +45,7 @@ export function handleApiError(error: unknown): NextResponse<ApiError> {
           statusCode: error.statusCode,
           message: error.message,
           details: error.details,
+          error_code: error.errorCode,
         },
       },
       { status: error.statusCode }

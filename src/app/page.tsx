@@ -1,6 +1,7 @@
 "use client";
 
 import React, { useState } from "react";
+import useSWR from 'swr';
 import { useRouter } from "next/navigation";
 import { User, Settings, LogOut } from "lucide-react";
 import { useAuth } from "@/contexts/AuthContext";
@@ -8,9 +9,10 @@ import { AuthGuard } from "@/components/auth/AuthGuard";
 import { SearchWithHistory } from "@/components/ui/search-with-history";
 import { InteractiveHoverButton } from "@/components/ui/interactive-hover-button";
 import { Tooltip } from "@/components/ui/tooltip";
-import { AnimatedBackground } from "@/components/ui/animated-background";
+import { useToast } from "@/components/ui/toast-notification";
 import { HorizontalWordLists } from "@/components/ui/horizontal-word-lists";
 import { LogoutConfirmModal } from "@/components/ui/logout-confirm-modal";
+import { CreateWordListModal } from "@/components/ui/create-wordlist-modal";
 import { motion } from "framer-motion";
 
 function HomePageContent() {
@@ -18,6 +20,7 @@ function HomePageContent() {
   const router = useRouter();
   const [showLogoutModal, setShowLogoutModal] = useState(false);
   const [isLoggingOut, setIsLoggingOut] = useState(false);
+  const { success, error } = useToast();
 
   const handleSearch = (query: string) => {
     const trimmedQuery = query.trim();
@@ -38,15 +41,16 @@ function HomePageContent() {
     // TODO: 导航到复习页面
   };
 
-  const handleWordListClick = (listName: string) => {
-    console.log("打开单词本:", listName);
-    // TODO: 导航到单词本详情页
+  const handleWordListClick = (listId: number) => {
+    if (listId === -1) {
+      router.push('/word-lists');
+    } else {
+      router.push(`/word-lists/${listId}`);
+    }
   };
 
-  const handleCreateWordList = () => {
-    console.log("创建新单词本");
-    // TODO: 打开创建单词本对话框
-  };
+  const [createOpen, setCreateOpen] = useState(false);
+  const handleCreateWordList = () => setCreateOpen(true);
 
   const handleSignOutClick = () => {
     setShowLogoutModal(true);
@@ -69,15 +73,9 @@ function HomePageContent() {
     setShowLogoutModal(false);
   };
 
-  // 模拟数据
-  const wordLists = [
-    { name: "默认单词本", wordCount: 0 },
-    { name: "test", wordCount: 0 },
-    { name: "test1", wordCount: 0 },
-    { name: "测试", wordCount: 7 },
-    { name: "Bellon", wordCount: 23 },
-    { name: "Elon", wordCount: 4 },
-  ];
+  const fetcher = (url: string) => fetch(url, { cache: 'no-store' }).then(r => r.json());
+  const { data: listsData, isLoading: loadingLists, mutate } = useSWR('/api/me/word-lists', fetcher, { revalidateOnFocus: true });
+  const wordLists = (listsData?.word_lists || []).map((x:any)=>({ id:x.id, name:x.name, wordCount:x.word_count }));
 
   // FSRS算法模拟数据
   const fsrsData = {
@@ -92,9 +90,7 @@ function HomePageContent() {
   };
 
   return (
-    <div className="min-h-screen bg-background relative">
-      {/* 动画背景 */}
-      <AnimatedBackground />
+    <div className="min-h-screen relative">
 
       {/* 头部导航 */}
       <motion.header 
@@ -239,10 +235,48 @@ function HomePageContent() {
           animate="visible"
           transition={{ duration: 0.8, delay: 0.6 }}
         >
-          <HorizontalWordLists
-            wordLists={wordLists}
-            onWordListClick={handleWordListClick}
-            onCreateWordList={handleCreateWordList}
+          {loadingLists ? (
+            <div className="text-center text-muted">加载单词本...</div>
+          ) : (
+            <HorizontalWordLists
+              wordLists={wordLists}
+              onWordListClick={handleWordListClick}
+              onCreateWordList={handleCreateWordList}
+            />
+          )}
+          <CreateWordListModal
+            isOpen={createOpen}
+            onClose={() => setCreateOpen(false)}
+            onConfirm={async (name) => {
+              setCreateOpen(false);
+              try {
+                // 乐观添加
+                const key = '/api/me/word-lists';
+                const optimistic = { id: -(Date.now()), user_id: '', name, created_at: new Date().toISOString(), word_count: 0 };
+                await mutate((current: any) => ({ word_lists: [optimistic, ...(current?.word_lists||[])] }), { revalidate: false });
+                const res = await fetch('/api/me/word-lists', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ name }) });
+                if (!res.ok) {
+                  const body = await res.json();
+                  if (body?.error?.error_code === 'WORDLIST_NAME_CONFLICT') {
+                    throw new Error('WORDLIST_NAME_CONFLICT');
+                  }
+                  throw new Error('CREATE_FAILED');
+                }
+                const body = await res.json();
+                await mutate((current: any) => {
+                  const filtered = (current?.word_lists||[]).filter((x:any)=>x.id!==optimistic.id);
+                  return { word_lists: [body.word_list, ...filtered] };
+                }, { revalidate: false });
+                await mutate();
+                success('已创建单词本');
+              } catch (e: any) {
+                await mutate(); // 回滚
+                if (e?.message === 'WORDLIST_NAME_CONFLICT') error('单词本名称已存在');
+                else error('创建失败');
+                setCreateOpen(true); // 失败重新打开
+                throw e;
+              }
+            }}
           />
         </motion.div>
       </main>

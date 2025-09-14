@@ -63,7 +63,7 @@ export function WordContent({ word, onAIChatClick }: WordContentProps) {
       <div className="space-y-4">
         <div className="flex items-start justify-between">
           <h2 className="text-xl font-semibold text-foreground">释义</h2>
-          <div className="flex items-center gap-4 -mt-[6px]">
+          <div className="flex items-center gap-4 -mt-[120px]">
             <ActionBar word={word} onAIChatClick={onAIChatClick} />
           </div>
         </div>

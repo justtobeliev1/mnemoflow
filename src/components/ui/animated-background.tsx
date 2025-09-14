@@ -71,7 +71,7 @@ function ElegantShape({
 
 function AnimatedBackground() {
     return (
-        <div className="fixed inset-0 overflow-hidden pointer-events-none">
+        <div className="fixed inset-0 overflow-hidden pointer-events-none z-0">
             {/* 基础渐变背景 */}
             <div className="absolute inset-0 bg-gradient-to-br from-indigo-500/[0.05] via-transparent to-rose-500/[0.05] blur-3xl" />
 
