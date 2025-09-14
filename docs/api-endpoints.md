@@ -121,7 +121,7 @@
 - **功能**: 获取用户的单词搜索历史
 - **认证**: 必须
 - **查询参数**:
-  - `limit` (可选): 返回结果数量，默认 10，最大 100
+  - `limit` (可选): 返回结果数量，默认 20，最大 100
 - **响应**: 搜索历史记录列表
 - **实现文件**: `src/app/api/me/search-history/route.ts`
 
@@ -274,7 +274,7 @@ src/
 │   ├── mnemonics/             # AI助记功能
 │   └── words/                 # 词汇相关
 │       ├── search/            # 单词搜索
-│       └── [wordId]/chats/    # 聊天功能
+│       └── (deprecated chats) # 旧聊天路由已返回 410
 ├── lib/validators/            # Zod验证器
 │   ├── profile.schemas.ts
 │   ├── word-list.schemas.ts
@@ -295,7 +295,7 @@ src/
 
 ## 更新日志
 
-- ✅ 完成所有19个API端点的实现
+- ✅ 完成所有20个API端点的实现（旧 `/words/[wordId]/chats` 已废弃，新增 `/api/ai/chat` & `/api/me/chat-history`）
 - ✅ 修复路由冲突：将 `GET /api/words/{searchTerm}` 移动到 `GET /api/words/search/{searchTerm}`
 - ✅ 采用函数式架构，使用参数注入模式
 - ✅ 集成FSRS算法用于智能复习调度

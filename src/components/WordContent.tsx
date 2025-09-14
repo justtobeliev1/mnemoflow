@@ -26,7 +26,7 @@ export function WordContent({ word, onAIChatClick }: WordContentProps) {
   const tags = parseTags(word.tags);
   
   return (
-    <div className="glass-surface-no-border rounded-xl p-8 space-y-8 max-w-3xl mx-auto">
+    <div className="rounded-xl p-8 space-y-8 max-w-3xl mx-auto">
       {/* 单词标题和发音 - 居左对齐 */}
       <div className="space-y-4">
         <h1 className="text-5xl font-bold text-foreground">{word.word}</h1>
@@ -59,7 +59,7 @@ export function WordContent({ word, onAIChatClick }: WordContentProps) {
         </div>
       </div>
       
-      {/* 释义部分 - 使用留白分隔 */}
+      {/* 释义部分 - 使用留白分隔，弱化边框感 */}
       <div className="space-y-4">
         <div className="flex items-start justify-between">
           <h2 className="text-xl font-semibold text-foreground">释义</h2>
@@ -73,7 +73,7 @@ export function WordContent({ word, onAIChatClick }: WordContentProps) {
             definitions.map((def, index) => (
               <div key={index} className="flex items-start gap-3">
                 {def.pos && (
-                  <span className="text-sm text-muted bg-surface/50 px-2 py-1 rounded-md shrink-0">
+                  <span className="text-sm text-muted bg-surface/30 px-2 py-1 rounded-md shrink-0">
                     {def.pos}
                   </span>
                 )}

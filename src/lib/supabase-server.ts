@@ -135,3 +135,26 @@ export function createSupabaseFromRequest(request: NextRequest) {
   const token = authHeader.replace('Bearer ', '');
   return createServerSupabaseClient(token);
 }
+
+/**
+ * auth.getUser() 带指数退避重试，缓解网络抖动导致的 UND_ERR_CONNECT_TIMEOUT
+ */
+export async function getUserWithRetry(
+  supabase: ReturnType<typeof createServerSupabaseClient> | ReturnType<typeof createSupabaseRouteClient>,
+  maxAttempts = 3,
+): Promise<NonNullable<Awaited<ReturnType<typeof supabase.auth.getUser>>['data']['user']>> {
+  let lastError: any;
+  for (let attempt = 0; attempt < maxAttempts; attempt++) {
+    try {
+      const { data: { user }, error } = await supabase.auth.getUser();
+      if (error) throw error;
+      if (user) return user;
+      throw new Error('No user');
+    } catch (err) {
+      lastError = err;
+      const delay = 200 * Math.pow(2, attempt); // 200, 400, 800ms
+      await new Promise(r => setTimeout(r, delay));
+    }
+  }
+  throw lastError;
+}

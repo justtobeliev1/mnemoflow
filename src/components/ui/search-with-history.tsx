@@ -128,7 +128,7 @@ const SearchWithHistory: React.FC<SearchWithHistoryProps> = ({
 
       {/* 搜索历史下拉 */}
       {isOpen && (
-        <div className="absolute top-full left-0 right-0 mt-2 glass-surface rounded-xl shadow-xl z-50 max-h-80 overflow-y-auto">
+        <div className="absolute top-full left-0 right-0 mt-2 glass-surface rounded-xl shadow-xl z-50 max-h-80 overflow-y-auto scrollbar-hide">
           <div className="p-3 border-b border-border">
             <div className="flex items-center gap-2 text-sm text-muted">
               <Clock size={16} />

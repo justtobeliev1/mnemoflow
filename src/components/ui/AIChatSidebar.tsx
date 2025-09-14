@@ -28,6 +28,8 @@ function buildSuggestions(word: string): string[] {
   ];
 }
 
+const getLocalKey = (wordId: number) => `mf_chat_${wordId}`;
+
 export function AIChatSidebar({ isOpen, onClose, word, wordId }: AIChatSidebarProps) {
   const [messages, setMessages] = useState<Message[]>([]);
   const [input, setInput] = useState('');
@@ -44,17 +46,48 @@ export function AIChatSidebar({ isOpen, onClose, word, wordId }: AIChatSidebarPr
 
   useEffect(scrollToBottom, [messages, isStreaming, hasFirstChunk]);
   
+  const readLocal = (): Message[] | null => {
+    if (typeof window === 'undefined') return null;
+    try {
+      const raw = localStorage.getItem(getLocalKey(wordId));
+      if (!raw) return null;
+      const parsed = JSON.parse(raw);
+      if (Array.isArray(parsed)) return parsed as Message[];
+      return null;
+    } catch {
+      return null;
+    }
+  };
+
+  const writeLocal = (data: Message[]) => {
+    if (typeof window === 'undefined') return;
+    try {
+      localStorage.setItem(getLocalKey(wordId), JSON.stringify(data));
+    } catch {}
+  };
+
   const fetchHistory = useCallback(async () => {
     if (!isOpen) return;
     setIsLoading(true);
     try {
       const response = await authedFetch(`/api/me/chat-history?wordId=${wordId}`);
-      const data = await response.json();
-      if (data && data.conversation_log) {
-        const list: Message[] = data.conversation_log;
-        setMessages(list);
-        const hasUserMsg = list.some(m => m.role === 'user');
-        setShowSuggestions(!hasUserMsg && list.length <= 1);
+      if (response.ok) {
+        const data = await response.json();
+        if (data && data.conversation_log) {
+          const list: Message[] = data.conversation_log;
+          setMessages(list);
+          writeLocal(list);
+          const hasUserMsg = list.some(m => m.role === 'user');
+          setShowSuggestions(!hasUserMsg && list.length <= 1);
+          return;
+        }
+      }
+      // 服务端无数据时，尝试本地缓存
+      const local = readLocal();
+      if (local) {
+        setMessages(local);
+        const hasUserMsg = local.some(m => m.role === 'user');
+        setShowSuggestions(!hasUserMsg && local.length <= 1);
       } else {
         const greeting: Message = { role: 'assistant', content: `你好！我是你的英语学习助手。关于单词 "${word}"，有什么可以帮你吗？` };
         setMessages([greeting]);
@@ -62,9 +95,17 @@ export function AIChatSidebar({ isOpen, onClose, word, wordId }: AIChatSidebarPr
       }
     } catch (error) {
       console.error('Failed to fetch chat history:', error);
-      const fallback: Message = { role: 'assistant', content: `你好！我是你的英语学习助手。关于单词 "${word}"，有什么可以帮你吗？` };
-      setMessages([fallback]);
-      setShowSuggestions(true);
+      // 网络失败时，优先本地缓存回退
+      const local = readLocal();
+      if (local) {
+        setMessages(local);
+        const hasUserMsg = local.some(m => m.role === 'user');
+        setShowSuggestions(!hasUserMsg && local.length <= 1);
+      } else {
+        const fallback: Message = { role: 'assistant', content: `你好！我是你的英语学习助手。关于单词 "${word}"，有什么可以帮你吗？` };
+        setMessages([fallback]);
+        setShowSuggestions(true);
+      }
     } finally {
       setIsLoading(false);
     }
@@ -74,14 +115,21 @@ export function AIChatSidebar({ isOpen, onClose, word, wordId }: AIChatSidebarPr
     fetchHistory();
   }, [isOpen, fetchHistory]);
 
-  const saveHistory = async (updatedMessages: Message[]) => {
-    try {
-      await authedFetch('/api/me/chat-history', {
-        method: 'POST',
-        body: JSON.stringify({ wordId, messages: updatedMessages }),
-      });
-    } catch (error) {
-      console.error('Failed to save chat history:', error);
+  const saveHistoryWithRetry = async (updatedMessages: Message[]) => {
+    writeLocal(updatedMessages);
+    const maxAttempts = 3;
+    for (let attempt = 0; attempt < maxAttempts; attempt++) {
+      try {
+        const resp = await authedFetch('/api/me/chat-history', {
+          method: 'POST',
+          body: JSON.stringify({ wordId, messages: updatedMessages }),
+        });
+        if (resp.ok) return;
+        // 非 2xx 也重试
+      } catch (e) {
+        // 网络异常重试
+      }
+      await new Promise(r => setTimeout(r, 500 * Math.pow(2, attempt))); // 500ms, 1000ms, 2000ms
     }
   };
 
@@ -105,6 +153,13 @@ export function AIChatSidebar({ isOpen, onClose, word, wordId }: AIChatSidebarPr
         body: JSON.stringify({ word, prompt }),
       });
 
+      const contentType = response.headers.get('content-type');
+
+      // 上游可能返回 404 HTML 等，若 content-type 非 text/event-stream 则视为错误
+      if (!response.ok || !contentType || !contentType.includes('text/event-stream')) {
+        throw new Error(`Unexpected response: status=${response.status} type=${contentType}`);
+      }
+
       if (!response.body) throw new Error('No response body');
       
       setMessages(prev => [...prev, { role: 'assistant', content: '' }]);
@@ -125,15 +180,25 @@ export function AIChatSidebar({ isOpen, onClose, word, wordId }: AIChatSidebarPr
           return [...prev.slice(0, -1), updatedLastMessage];
         });
       }
-    } catch (error) {
-      console.error('AI chat error:', error);
-      finalAssistantMessage = '抱歉，我暂时无法回答，请稍后再试。';
-      setMessages(prev => [...prev, { role: 'assistant', content: finalAssistantMessage }]);
+      // 完成后保存历史
+      const updated: Message[] = [...newMessages, { role: 'assistant', content: finalAssistantMessage }];
+      setMessages(updated);
+      saveHistoryWithRetry(updated);
+    } catch (e: any) {
+      console.error('AI chat error:', e);
+      // 展示错误气泡
+      const errMsg: Message = {
+        role: 'assistant',
+        content: '抱歉，网络出现问题，暂时无法回应。请稍后再试。',
+      };
+      const updated = [...messages, errMsg];
+      setMessages(updated);
     } finally {
       setIsLoading(false);
       setIsStreaming(false);
       const finalMessages = [...newMessages, { role: 'assistant', content: finalAssistantMessage }];
-      saveHistory(finalMessages);
+      // 写本地 + 后台重试保存
+      saveHistoryWithRetry(finalMessages);
     }
   };
 
@@ -177,7 +242,7 @@ export function AIChatSidebar({ isOpen, onClose, word, wordId }: AIChatSidebarPr
             </div>
 
             {/* Messages */}
-            <div className="flex-1 overflow-y-auto p-4 space-y-4">
+            <div className="flex-1 overflow-y-auto p-4 space-y-4 scrollbar-hide">
               {/* 预设问题（仅新会话显示） */}
               {showSuggestions && (
                 <div className="space-y-2">
