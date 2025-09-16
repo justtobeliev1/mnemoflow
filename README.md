@@ -23,7 +23,7 @@ Mnemoflow是一款基于认知科学和AI的智能化英语词汇学习应用。
 - **样式**: [Tailwind CSS](https://tailwindcss.com/)
 - **数据获取与缓存**: [SWR](https://swr.vercel.app/)（用于单词本、收藏弹窗的缓存与乐观更新）
 - **部署**: [Vercel](https://vercel.com/)
-- **AI集成**: Next.js API 路由 + 阿里云百炼 DashScope REST（SSE流式）。
+- **AI集成**: Next.js API 路由 + 阿里云百炼 DashScope REST（SSE流式）/ OpenAI 兼容接口（助记生成）。
 
 ## 🏁 本地启动
 
@@ -55,6 +55,12 @@ Mnemoflow是一款基于认知科学和AI的智能化英语词汇学习应用。
     DASHSCOPE_MODEL_ID=qwen2.5-7b-instruct-1m   # 以控制台开通的模型ID为准
     # 可选：如需自定义网关地址（默认 https://dashscope.aliyuncs.com）
     # DASHSCOPE_BASE_URL=https://dashscope.aliyuncs.com
+    
+    # 助记生成（OpenAI 兼容，必填）
+    OPENAI_BASE_URL=https://hiapi.online
+    OPENAI_API_KEY=sk-xxxxxxxx
+    OPENAI_MODEL=gpt-4o-mini
+    OPENAI_TIMEOUT_MS=60000
     ```
     修改 `.env.local` 后需重启 `npm run dev` 以生效。
 

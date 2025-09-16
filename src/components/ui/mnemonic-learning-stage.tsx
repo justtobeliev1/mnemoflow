@@ -217,10 +217,12 @@ export function MnemonicLearningStage(props: MnemonicLearningStageProps) {
                       <p className="text-foreground">{mnemonicData?.example?.sentence ?? example.en}</p>
                       <p className="text-muted mt-1">{mnemonicData?.example?.translation ?? example.zh}</p>
                     </div>
+                    {/* 反馈按钮：在重新生成或加载中隐藏 */}
+                    {!mnemonicLoading && !isLoading && (
+                      <FeedbackRow wordId={wordId} mnemonicId={meta?.id} />
+                    )}
                   </>
                 )}
-                {/* 反馈行 */}
-                <FeedbackRow wordId={wordId} mnemonicId={meta?.id} />
               </div>
             </motion.div>
           </AnimatePresence>

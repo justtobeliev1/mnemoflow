@@ -170,21 +170,29 @@
 - **查询参数**:
   - `timeout` (可选): 轮询超时时间(毫秒)，默认 30000，最大 60000
 - **响应**: 
-  - 200: 助记内容已完成
-  - 202: 内容正在生成中
+  - 200: 助记内容已完成（包含 `id` 与 `version`）
+  - 202: 内容正在生成中（当 `{ content.status: 'generating' }` 时返回）
   - 404: 助记内容不存在
 - **实现文件**: `src/app/api/mnemonics/[wordId]/route.ts`
 - **服务层**: `src/services/mnemonic.service.ts`
 - **验证器**: `src/lib/validators/mnemonic.schemas.ts`
 
-#### 6. 重新生成助记内容
+#### 6. 重新生成助记内容（插入新版本）
 - **端点**: `PUT /api/mnemonics/{wordId}`
-- **功能**: 重新生成单词的助记内容
+- **功能**: 重新生成单词的助记内容。每次调用都会插入新版本（`version+1`），历史版本保留。
 - **认证**: 必须
 - **路径参数**: `wordId` - 单词ID
 - **请求体** (可选): 重新生成参数
   - `type` (可选): 助记类型 ('story', 'association', 'visual', 'phonetic')
-  - `user_context` (可选): 用户上下文信息
+  - `user_context` (可选): 用户上下文信息（“追加要求”内容）
+#### 6.1 助记反馈
+- **端点 A**: `POST /api/mnemonics/{wordId}/feedback`
+- **功能**: 提交反馈，幂等写入（`upsert` on `(user_id, word_mnemonic_id)`）
+- **请求体**: `{ rating: 1|-1, mnemonicId?: number }`（推荐传 `mnemonicId` 绑定到具体版本，否则默认最新版本）
+- **响应**: 201
+- **端点 B**: `GET /api/mnemonics/{wordId}/feedback?mnemonicId=...`
+- **功能**: 读取当前用户对该版本是否已反馈（恢复“已提交”）
+- **响应**: `{ exists: boolean, rating?: 1|-1 }`
 - **响应**: 重新生成任务确认
 - **实现文件**: `src/app/api/mnemonics/[wordId]/route.ts`
 

@@ -43,9 +43,7 @@ export async function POST(request: NextRequest, { params }: { params: { wordId:
       mnemonic = data;
     }
 
-    if (mnErr || !mnemonic) {
-      return NextResponse.json({ error: '助记内容不存在' }, { status: 404 });
-    }
+    // mnemonic 已在上面校验，无需 mnErr（避免未定义变量）
 
     // 插入/更新反馈（同一用户对同一助记仅一条记录）
     const { error: insErr } = await (supabase as any)
