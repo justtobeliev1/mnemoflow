@@ -32,11 +32,28 @@ export default function WordDetailPage({ params }: WordDetailPageProps) {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [notFound, setNotFound] = useState(false);
+  const [hasFreshCache, setHasFreshCache] = useState(false);
   const [isChatOpen, setIsChatOpen] = useState(false);
   const router = useRouter();
   const { session } = useAuth();
   
   const decodedWord = decodeURIComponent(params.word);
+
+  // ===== 本地缓存读取（首屏同步，避免闪烁） =====
+  useEffect(() => {
+    try {
+      const raw = localStorage.getItem(`word:${decodedWord}`);
+      if (raw) {
+        const cached = JSON.parse(raw) as { ts: number; word: WordData };
+        if (Date.now() - cached.ts < 7 * 24 * 60 * 60 * 1000) {
+          // 若尚未设置数据，立即填充，避免出现 loading
+          setWordData((prev) => prev ?? cached.word);
+          setHasFreshCache(true);
+          setLoading((prev) => (prev && !prev ? prev : false));
+        }
+      }
+    } catch {}
+  }, [decodedWord]);
   
   const fetchWord = async () => {
     if (!session?.access_token) {
@@ -45,7 +62,9 @@ export default function WordDetailPage({ params }: WordDetailPageProps) {
       return;
     }
 
-    setLoading(true);
+    // 若已有缓存展示，不重复显示 loading
+    if (hasFreshCache) return; // 已有最新缓存，不请求
+    if (!wordData) setLoading(true);
     setError(null);
     setNotFound(false);
     
@@ -61,6 +80,10 @@ export default function WordDetailPage({ params }: WordDetailPageProps) {
       if (response.ok) {
         const data = await response.json();
         setWordData(data.word);
+        // 写缓存
+        try {
+          localStorage.setItem(`word:${decodedWord}`, JSON.stringify({ ts: Date.now(), word: data.word }));
+        } catch {}
       } else if (response.status === 404) {
         setNotFound(true);
       } else if (response.status === 401) {
@@ -78,7 +101,7 @@ export default function WordDetailPage({ params }: WordDetailPageProps) {
         setError('请求失败，请重试');
       }
     } finally {
-      setLoading(false);
+      if (!wordData) setLoading(false);
     }
   };
   

@@ -4,6 +4,20 @@ import { cookies } from 'next/headers';
 import { NextRequest } from 'next/server';
 import { Database } from './database.types';
 import { createAuthError } from './errors';
+import { jwtVerify, type JWTPayload } from 'jose'
+
+const JWT_SECRET = process.env.SUPABASE_JWT_SECRET || '';
+
+async function verifyJwtLocally(token: string): Promise<null | { id: string; email?: string | null }>{
+  if (!JWT_SECRET) return null;
+  try {
+    const { payload } = await jwtVerify(token, new TextEncoder().encode(JWT_SECRET));
+    if (payload.exp && payload.exp * 1000 < Date.now()) return null; // 过期
+    return { id: payload.sub || '', email: (payload as JWTPayload & { email?: string }).email ?? null };
+  } catch {
+    return null;
+  }
+}
 
 /**
  * a a fetch a a a a AbortControllera a a a a
@@ -89,10 +103,24 @@ export async function getAuthenticatedUser(supabase: ReturnType<typeof createSup
  * 验证用户认证状态的辅助函数
  * 返回supabase客户端和用户信息
  */
-export async function validateAuth() {
+export async function validateAuth(request?: NextRequest) {
   const supabase = createSupabaseRouteClient();
-  const user = await getAuthenticatedUser(supabase);
-  
+
+  // 1. 提取 token
+  const headerToken = request?.headers.get('authorization')?.replace('Bearer ', '') || null;
+  const cookieToken = cookies().get('sb-access-token')?.value || null;
+  const token = headerToken || cookieToken;
+
+  // 2. 尝试本地验证
+  if (token) {
+    const local = await verifyJwtLocally(token);
+    if (local) {
+      return { supabase, user: { id: local.id, email: local.email } } as const;
+    }
+  }
+
+  // 3. 回退远程 Auth（带重试）
+  const user = await getUserWithRetry(supabase);
   return { supabase, user };
 }
 

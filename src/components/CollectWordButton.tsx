@@ -107,6 +107,14 @@ export function CollectWordButton({ word, onCollected }: CollectWordButtonProps)
         success('已收藏到单词本');
         onCollected?.();
         mutate();
+        // 静默触发助记生成（失败不打扰用户，服务端已做重试与状态管理）
+        try {
+          // 先查询是否已有助记（避免二次生成）
+          const check = await fetch(`/api/mnemonics/${word.id}?timeout=1000`, { headers: { 'Authorization': `Bearer ${session.access_token}` }, cache: 'no-store' });
+          if (!check.ok || check.status === 404) {
+            fetch(`/api/mnemonics/${word.id}`, { method: 'POST', headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${session.access_token}` }, body: JSON.stringify({}) });
+          }
+        } catch {}
       } else {
         const errorData = await response.json();
         throw new Error(errorData?.error?.message || '收藏失败');

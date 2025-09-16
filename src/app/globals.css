@@ -70,4 +70,12 @@
   .scrollbar-hide::-webkit-scrollbar {
     display: none;
   }
+
+  .highlight {
+    /* 全高度渐变底色（Mnemoflow 主题：靛紫→白→玫瑰），在暗色玻璃态下仍有充足对比 */
+    background: linear-gradient(90deg, rgba(165,180,252,0.72), rgba(255,255,255,0.48), rgba(253,164,175,0.72));
+    border-radius: 6px;
+    padding: 0 4px;
+    color: #fff;
+  }
 }

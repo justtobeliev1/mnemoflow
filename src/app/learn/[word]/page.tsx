@@ -33,15 +33,30 @@ export default function LearnWordPage({ params }: PageProps) {
         setLoading(false);
         return;
       }
-      setLoading(true);
       setError(null);
+      const cacheKey = `word:${decoded}`;
+      // 先读本地缓存，提升秒开体验
+      let hadCache = false;
       try {
+        const cached = localStorage.getItem(cacheKey);
+        if (cached) {
+          const parsed = JSON.parse(cached) as { ts: number; word: WordData };
+          if (Date.now() - parsed.ts < 24 * 60 * 60 * 1000) {
+            setWordData(parsed.word);
+            hadCache = true;
+          }
+        }
+      } catch {}
+
+      if (!hadCache) setLoading(true);
+      if (!hadCache) try {
         const res = await fetch(`/api/words/search/${encodeURIComponent(decoded)}`, {
           headers: { 'Authorization': `Bearer ${session.access_token}` }
         });
         if (res.ok) {
           const data = await res.json();
           setWordData(data.word);
+          try { localStorage.setItem(cacheKey, JSON.stringify({ ts: Date.now(), word: data.word })); } catch {}
         } else {
           const txt = await res.text();
           setError(txt || `加载失败 (${res.status})`);
@@ -49,7 +64,7 @@ export default function LearnWordPage({ params }: PageProps) {
       } catch (e: any) {
         setError(e?.message || '网络错误');
       } finally {
-        setLoading(false);
+        if (!hadCache) setLoading(false);
       }
     };
     if (session) fetchWord();
@@ -77,19 +92,14 @@ export default function LearnWordPage({ params }: PageProps) {
             phonetic={wordData.phonetic || undefined}
             definitions={parsedDefinitions}
             tags={parsedTags}
-            senses={["截然不同的；迥异的", "本质上不同而难以比较的"]}
-            blueprint={"dis(不) + pa(爸) + rate(同一水准/rate) → 和爸爸不是一个水准的。"}
-            scenario={"想象一个分屏画面：左边是成功的银行家父亲(pa)在审阅高回报率(rate)的报告；右边是朋克乐手的儿子，在车库疯狂弹吉他。父亲摇头感叹：完全不(dis)是和爸爸(pa)在同一个水准(rate)上的人——兴趣与追求截然不同。"}
-            example={{
-              en: 'Their tastes in music are so disparate that they rarely attend the same concerts.',
-              zh: '他们在音乐品味上截然不同，以至于很少会去同一场演出。',
-            }}
+            senses={[]}
+            blueprint={''}
+            scenario={''}
+            example={{ en: '', zh: '' }}
           />
         )}
 
-        {loading && (
-          <div className="text-muted">加载中…</div>
-        )}
+        {/* 移除加载中文本，避免与已渲染内容并排显示 */}
         {error && (
           <div className="text-red-300 mt-4">{error}</div>
         )}

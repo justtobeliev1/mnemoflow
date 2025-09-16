@@ -1,6 +1,7 @@
 import { SupabaseClient } from '@supabase/supabase-js';
-import { MnemonicGenerateRequest, MnemonicType, MnemonicStatus } from '@/lib/validators/mnemonic.schemas';
+import { MnemonicGenerateRequest, MnemonicType } from '@/lib/validators/mnemonic.schemas';
 import { createNotFoundError, AppError } from '@/lib/errors';
+import { generateMnemonicViaOpenAI } from '@/lib/ai/openai-proxy';
 
 /**
  * Mnemonic Service - 函数式实现
@@ -24,25 +25,12 @@ async function generateMnemonicContent(
   word: string,
   definition: any,
   type: MnemonicType,
-  userContext?: string
+  userContext?: string,
+  action: 'initial' | 'regenerate' | 'refine' = 'initial',
+  previous?: any,
 ): Promise<string> {
-  // 模拟异步AI生成过程
-  await new Promise(resolve => setTimeout(resolve, 2000 + Math.random() * 3000));
-  
-  const templates = {
-    story: `记忆小故事：想象一个关于"${word}"的生动故事...`,
-    association: `联想记忆：将"${word}"与你熟悉的事物联系起来...`,
-    visual: `视觉记忆：在脑海中构建"${word}"的视觉画面...`,
-    phonetic: `语音记忆：利用"${word}"的发音特点来记忆...`,
-  };
-  
-  let content = templates[type];
-  
-  if (userContext) {
-    content += `\n\n结合您的背景：${userContext}`;
-  }
-  
-  return content;
+  // 使用 OpenAI 兼容中转站；内部已带指数退避重试
+  return await generateMnemonicViaOpenAI(word, definition, type, userContext, undefined, action, previous);
 }
 
 /**
@@ -57,7 +45,7 @@ export async function getMnemonicForWord({
   wordId,
 }: BaseArgs & { wordId: number }) {
   const { data, error } = await supabase
-    .from('mnemonics')
+    .from('word_mnemonics')
     .select(`
       *,
       words:word_id (
@@ -68,7 +56,8 @@ export async function getMnemonicForWord({
       )
     `)
     .eq('word_id', wordId)
-    .eq('user_id', userId)
+    .order('version', { ascending: false })
+    .limit(1)
     .single();
 
   if (error) {
@@ -117,13 +106,12 @@ export async function createMnemonicForWord({
 
   // 3. 创建新的助记内容记录（初始状态为生成中）
   const { data: newMnemonic, error: createError } = await (supabase as any)
-    .from('mnemonics')
+    .from('word_mnemonics')
     .insert({
       word_id: data.word_id,
-      user_id: userId,
-      type: data.type,
-      status: 'generating',
-      user_context: data.user_context || null,
+      content: { status: 'generating' },
+      version: 1,
+      created_by: userId,
     })
     .select(`
       *,
@@ -140,41 +128,37 @@ export async function createMnemonicForWord({
     throw new AppError(`创建助记内容任务失败: ${createError.message}`, 500);
   }
 
-  // 4. 异步生成助记内容（不阻塞响应）
-  Promise.resolve().then(async () => {
-    try {
-      const startTime = Date.now();
-      
-      const content = await generateMnemonicContent(
-        word.word,
-        word.definition,
-        data.type,
-        data.user_context
-      );
-      
-      const generationTime = Date.now() - startTime;
-      
-      // 更新助记内容
-      await (supabase as any)
-        .from('mnemonics')
-        .update({
-          content,
-          status: 'completed',
-          generation_time: generationTime,
-        })
-        .eq('id', newMnemonic.id);
-        
-    } catch (error) {
-      // 生成失败时更新状态
-      console.error('助记内容生成失败:', error);
-      await (supabase as any)
-        .from('mnemonics')
-        .update({ status: 'failed' })
-        .eq('id', newMnemonic.id);
-    }
-  });
+  // 4. 同步生成助记内容（直接写入 content）
+  try {
+    const contentText = await generateMnemonicContent(
+      word.word,
+      word.definition,
+      data.type,
+      data.user_context,
+      'initial'
+    );
 
-  return newMnemonic;
+    let contentJson: any = null;
+    try {
+      const match = contentText.match(/```json[\s\S]*?```/i);
+      const raw = match ? match[0].replace(/```json|```/g, '').trim() : contentText;
+      contentJson = JSON.parse(raw);
+    } catch {
+      contentJson = { raw: contentText };
+    }
+
+    await (supabase as any)
+      .from('word_mnemonics')
+      .update({ content: contentJson })
+      .eq('id', newMnemonic.id);
+  } catch (error) {
+    await (supabase as any)
+      .from('word_mnemonics')
+      .update({ content: { error: String(error) } })
+      .eq('id', newMnemonic.id);
+  }
+
+  return await getMnemonicForWord({ supabase, userId, wordId: data.word_id });
 }
 
 /**
@@ -212,50 +196,55 @@ export async function regenerateMnemonicForWord({
     throw createNotFoundError('单词');
   }
 
-  // 3. 更新状态为生成中
-  const { error: updateError } = await (supabase as any)
-    .from('mnemonics')
-    .update({
-      status: 'generating',
-      type: type || existingMnemonic.type,
-      user_context: userContext !== undefined ? userContext : existingMnemonic.user_context,
-      content: null, // 清空旧内容
+  // 3. 新建一个版本（version + 1），状态为生成中
+  const nextVersion = (existingMnemonic?.version || 1) + 1;
+  const { data: newRow, error: insertErr } = await (supabase as any)
+    .from('word_mnemonics')
+    .insert({
+      word_id: wordId,
+      content: { status: 'generating' },
+      version: nextVersion,
+      created_by: userId,
     })
-    .eq('id', existingMnemonic.id);
+    .select('*')
+    .single();
 
-  if (updateError) {
-    throw new AppError(`更新助记内容状态失败: ${updateError.message}`, 500);
+  if (insertErr || !newRow) {
+    throw new AppError(`创建新版本失败: ${insertErr?.message || 'unknown'}`, 500);
   }
 
   // 4. 异步重新生成内容
   Promise.resolve().then(async () => {
     try {
-      const startTime = Date.now();
-      
-      const content = await generateMnemonicContent(
+      const contentText = await generateMnemonicContent(
         word.word,
         word.definition,
-        type || existingMnemonic.type,
-        userContext !== undefined ? userContext : existingMnemonic.user_context
+        type || 'story',
+        userContext,
+        userContext ? 'refine' : 'regenerate',
+        existingMnemonic?.content || null
       );
-      
-      const generationTime = Date.now() - startTime;
-      
+
+      let contentJson: any = null;
+      try {
+        const match = contentText.match(/```json[\s\S]*?```/i);
+        const raw = match ? match[0].replace(/```json|```/g, '').trim() : contentText;
+        contentJson = JSON.parse(raw);
+      } catch {
+        contentJson = { raw: contentText };
+      }
+
       await (supabase as any)
-        .from('mnemonics')
-        .update({
-          content,
-          status: 'completed',
-          generation_time: generationTime,
-        })
-        .eq('id', existingMnemonic.id);
+        .from('word_mnemonics')
+        .update({ content: contentJson })
+        .eq('id', newRow.id);
         
     } catch (error) {
-      console.error('助记内容重新生成失败:', error);
+      // 失败不再打印冗长日志，仅存入表中
       await (supabase as any)
-        .from('mnemonics')
-        .update({ status: 'failed' })
-        .eq('id', existingMnemonic.id);
+        .from('word_mnemonics')
+        .update({ content: { error: String(error) } })
+        .eq('id', newRow.id);
     }
   });
 
