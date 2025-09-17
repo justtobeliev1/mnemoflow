@@ -137,9 +137,9 @@
 
 ### 🔄 复习系统 (FSRS 算法)
 
-#### 15. 获取复习队列
+#### 15. 获取复习队列 ⚠️ DEPRECATED（此端口已经弃用，请改用 `GET /api/me/review/session`）
 - **端点**: `GET /api/me/review/queue`
-- **功能**: 获取用户的复习队列和统计信息
+- **功能**: 获取用户的复习队列和统计信息（旧模式，前端需再请求题目与选项）
 - **认证**: 必须
 - **查询参数**:
   - `limit` (可选): 返回结果数量，默认 20，最大 100
@@ -149,7 +149,7 @@
 - **服务层**: `src/services/review.service.ts`
 - **验证器**: `src/lib/validators/review.schemas.ts`
 
-#### 16. 更新学习进度
+#### 16. 更新学习进度 ⚠️ DEPRECATED（此端口已经弃用，请改用 `POST /api/me/quiz/submit`）
 - **端点**: `PATCH /api/me/review/progress/{wordId}`
 - **功能**: 根据复习结果更新单词的学习进度 (FSRS 算法)
 - **认证**: 必须
@@ -159,6 +159,56 @@
   - `review_time` (可选): 复习时间
 - **响应**: 更新后的学习进度
 - **实现文件**: `src/app/api/me/review/progress/[wordId]/route.ts`
+
+#### 21. 获取复习会话（NEW）
+- **端点**: `GET /api/me/review/session`
+- **功能**: 一次性返回整场复习会话（例如 20 套题）。后端调用数据库 RPC `generate_review_session(userId, limit)` 生成题目及 3 个干扰项并打乱顺序。
+- **认证**: 必须
+- **查询参数**:
+  - `limit` (可选): 每次返回的题目数量，默认 20，最大 100
+- **响应**: 会话 JSON
+
+示例：
+```json
+{
+  "quizzes": [
+    {
+      "quiz_word_id": 123,
+      "options": [
+        { "word_id": 123, "word": "abandon", "definition": "v. 放弃" },
+        { "word_id": 45,  "word": "ability", "definition": "n. 能力" },
+        { "word_id": 678, "word": "band",    "definition": "n. 乐队" },
+        { "word_id": 910, "word": "ban",     "definition": "v. 禁止" }
+      ]
+    }
+  ]
+}
+```
+- **实现文件**: `src/app/api/me/review/session/route.ts`
+- **数据库函数**: `public.generate_review_session(p_user_id uuid, p_limit int)`
+
+#### 22. 提交测验结果（NEW）
+- **端点**: `POST /api/me/quiz/submit`
+- **功能**: 原子化处理单次作答：后端判定正误并更新 FSRS 进度。
+- **认证**: 必须
+- **请求体**:
+```json
+{
+  "quiz_word_id": 123,
+  "selected_word_id": 123,
+  "rating": "good"
+}
+```
+- **响应**:
+```json
+{
+  "is_correct": true,
+  "updated_progress": { "word_id": 123, "due": "2025-09-17T12:00:00Z", "stability": 6.75, ... }
+}
+```
+- **实现文件**: `src/app/api/me/quiz/submit/route.ts`
+- **服务层**: `src/services/review.service.ts` (`updateWordProgressForUser`)
+- **验证器**: `src/lib/validators/review.schemas.ts` (`FSRSRatingSchema`)
 
 ### 🧠 AI 助记功能
 
@@ -305,6 +355,9 @@ src/
 
 - ✅ 完成所有20个API端点的实现（旧 `/words/[wordId]/chats` 已废弃，新增 `/api/ai/chat` & `/api/me/chat-history`）
 - ✅ 修复路由冲突：将 `GET /api/words/{searchTerm}` 移动到 `GET /api/words/search/{searchTerm}`
+- ✅ 新增复习会话端点：`GET /api/me/review/session`（替代旧队列端点）
+- ✅ 新增作答提交端点：`POST /api/me/quiz/submit`（替代旧进度更新端点）
+- ⚠️ 标注废弃：`GET /api/me/review/queue` 与 `PATCH /api/me/review/progress/{wordId}`
 - ✅ 采用函数式架构，使用参数注入模式
 - ✅ 集成FSRS算法用于智能复习调度
 - ✅ 实现异步AI内容生成和轮询机制
