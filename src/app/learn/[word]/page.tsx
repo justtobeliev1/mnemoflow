@@ -3,7 +3,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { useAuth } from '@/contexts/AuthContext';
 import { AnimatedBackground } from '@/components/ui/animated-background';
-import { MnemonicLearningStage } from '@/components/ui/mnemonic-learning-stage';
+import { ReviewFlowStage } from '@/components/ui/review-flow-stage';
 import { parseDefinition } from '@/utils/definition';
 import { parseTags } from '@/utils/tags';
 
@@ -35,7 +35,6 @@ export default function LearnWordPage({ params }: PageProps) {
       }
       setError(null);
       const cacheKey = `word:${decoded}`;
-      // 先读本地缓存，提升秒开体验
       let hadCache = false;
       try {
         const cached = localStorage.getItem(cacheKey);
@@ -80,26 +79,24 @@ export default function LearnWordPage({ params }: PageProps) {
     return parseTags(wordData.tags);
   }, [wordData]);
 
-  // 简化：加载与错误仅用轻提示，本页核心演示学习舞台
   return (
     <div className="min-h-screen bg-background relative">
       <AnimatedBackground />
       <main className="relative z-10 max-w-6xl mx-auto px-6 py-10 min-h-screen flex items-center justify-center">
         {wordData && (
-          <MnemonicLearningStage
+          <ReviewFlowStage
             word={wordData.word}
             wordId={wordData.id}
             phonetic={wordData.phonetic || undefined}
             definitions={parsedDefinitions}
             tags={parsedTags}
-            senses={[]}
-            blueprint={''}
-            scenario={''}
-            example={{ en: '', zh: '' }}
+            promptText={wordData.word}
+            options={[wordData.word, 'context', 'contact', 'contest']}
+            correctOption={wordData.word}
+            mnemonicHint={'把 con(一起) + text(文本) 结合理解：与上下文一起出现，才能真正理解。'}
+            onNextWord={() => { /* TODO: 切换到队列中的下一个词 */ }}
           />
         )}
-
-        {/* 移除加载中文本，避免与已渲染内容并排显示 */}
         {error && (
           <div className="text-red-300 mt-4">{error}</div>
         )}
