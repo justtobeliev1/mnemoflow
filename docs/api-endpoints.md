@@ -227,6 +227,23 @@
 
 > 说明：旧的 `PATCH /api/me/review/progress/{wordId}` 已废弃。请全部改用 `POST /api/me/quiz/submit`。
 
+#### 23. 获取到期复习清单（NEW）
+- 端点: `GET /api/me/reviews/due-list`
+- 功能: 调用数据库函数 `public.get_due_reviews(user_id, limit)`，返回所有 `due <= NOW()` 的单词，按到期时间升序。
+- 认证: 必须
+- 查询参数:
+  - `limit` (可选): 返回数量上限，默认 100，最大 500
+- 响应:
+```json
+{
+  "reviews": [
+    { "word_id": 1, "word": "abandon", "compressed_definition": "v. 放弃", "due": "2025-09-19T12:00:00Z", "stability": 6.7, "difficulty": 4.8 }
+  ]
+}
+```
+- 实现文件: `src/app/api/me/reviews/due-list/route.ts`
+- 数据库函数: `public.get_due_reviews(p_user_id uuid, p_limit int)`
+
 ### 🧠 AI 助记功能
 
 #### 5. 获取助记内容

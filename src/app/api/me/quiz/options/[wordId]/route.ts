@@ -1,6 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { validateAuth } from '@/lib/supabase-server';
-import { handleApiError, createValidationError } from '@/lib/errors';
+import { createSupabaseRouteClient } from '@/lib/supabase-server';
 
 /**
  * GET /api/me/quiz/options/{wordId}
@@ -9,26 +8,26 @@ import { handleApiError, createValidationError } from '@/lib/errors';
  */
 export async function GET(_req: NextRequest, { params }: { params: { wordId: string } }) {
   try {
-    const { supabase } = await validateAuth();
+    const supabase = createSupabaseRouteClient();
     const wordId = parseInt(params.wordId, 10);
     if (Number.isNaN(wordId) || wordId <= 0) {
-      throw createValidationError('无效的 wordId', 'wordId 必须为正整数');
+      return NextResponse.json({ error: { statusCode: 400, message: '无效的 wordId', details: 'wordId 必须为正整数' } }, { status: 400 });
     }
 
     const { data, error } = await (supabase as any).rpc('get_quiz_options', { p_word_id: wordId });
     if (error) {
-      return NextResponse.json({ message: '生成选项失败', error: error.message }, { status: 500 });
+      return NextResponse.json({ error: { statusCode: 500, message: '生成选项失败', details: error.message } }, { status: 500 });
     }
 
     const rows: any[] = Array.isArray(data) ? data : [];
-    // 优先使用 compressed_definition 作为展示文本；兜底使用 word
     const options = rows.map(r => r.compressed_definition || r.word || '');
     const correctRow = rows.find(r => r.is_correct) || null;
     const correct = correctRow ? (correctRow.compressed_definition || correctRow.word || '') : '';
 
     return NextResponse.json({ options, correct, raw: rows }, { status: 200 });
-  } catch (e) {
-    return handleApiError(e);
+  } catch (e: any) {
+    console.error('quiz/options error', e);
+    return NextResponse.json({ error: { statusCode: 500, message: '服务器内部错误', details: e?.message || 'unknown' } }, { status: 500 });
   }
 }
 

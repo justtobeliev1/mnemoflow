@@ -3,6 +3,7 @@ import "./globals.css";
 import { AuthProvider } from "@/contexts/AuthContext";
 import { ToastContainer } from "@/components/ui/toast-notification";
 import dynamic from 'next/dynamic';
+import { QueryClientProvider } from '@/contexts/QueryClientProvider';
 
 // 动态加载背景动画组件，仅在客户端渲染，避免与服务端 HTML 不匹配
 const AnimatedBackground = dynamic(() => import('@/components/ui/animated-background').then(m => m.AnimatedBackground), { ssr: false });
@@ -21,13 +22,15 @@ export default function RootLayout({
     <html lang="zh-CN">
       <body className="font-sans antialiased">
         <AuthProvider>
-          <div className="min-h-screen bg-background relative">
-            <AnimatedBackground />
-            <div className="relative z-10">
-              {children}
+          <QueryClientProvider>
+            <div className="min-h-screen bg-background relative">
+              <AnimatedBackground />
+              <div className="relative z-10">
+                {children}
+              </div>
             </div>
-          </div>
-          <ToastContainer />
+            <ToastContainer />
+          </QueryClientProvider>
         </AuthProvider>
       </body>
     </html>

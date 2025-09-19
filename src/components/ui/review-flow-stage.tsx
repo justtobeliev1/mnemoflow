@@ -41,6 +41,7 @@ export function ReviewFlowStage(props: ReviewFlowStageProps) {
   const { flow = 'review', wordId, word, phonetic, definitions, tags, promptText = word, options = [], correctOption, mnemonicHint, onNextWord, forceTestForCurrent, enqueueRelearn, clearForceTest } = props;
   const [mode, setMode] = useState<ReviewStageMode>({ kind: 'idle' });
   const { session } = useAuth();
+  const optionsReady = Array.isArray(options) && options.length > 0 && !!correctOption;
 
   // 切换新单词时：
   // - 学习页：从 ReviewStage 开始
@@ -178,7 +179,16 @@ export function ReviewFlowStage(props: ReviewFlowStageProps) {
             {mode.kind === 'idle' && (
               forceTestForCurrent ? (
                 <div className="min-h-[460px] w-full flex items-center justify-center">
-                  <ChoiceTestPanel word={word} options={options} correct={correctOption || ''} mnemonicHint={mnemonicHint} onComplete={handleTestComplete} delayMs={400} />
+                  {optionsReady ? (
+                    <ChoiceTestPanel word={word} options={options} correct={correctOption || ''} mnemonicHint={mnemonicHint} onComplete={handleTestComplete} delayMs={400} />
+                  ) : (
+                    <div className="w-full max-w-sm grid grid-cols-1 gap-3">
+                      <div className="h-10 rounded-xl bg-surface/40 animate-pulse" />
+                      <div className="h-10 rounded-xl bg-surface/40 animate-pulse" />
+                      <div className="h-10 rounded-xl bg-surface/40 animate-pulse" />
+                      <div className="h-10 rounded-xl bg-surface/40 animate-pulse" />
+                    </div>
+                  )}
                 </div>
               ) : (
                 <div className="min-h-[460px]" />
@@ -191,7 +201,16 @@ export function ReviewFlowStage(props: ReviewFlowStageProps) {
             )}
             {mode.kind === 'test' && (
               <div className="min-h-[460px] w-full flex items-center justify-center">
-                <ChoiceTestPanel word={word} options={options} correct={correctOption || ''} mnemonicHint={mnemonicHint} onComplete={handleTestComplete} delayMs={400} />
+                {optionsReady ? (
+                  <ChoiceTestPanel word={word} options={options} correct={correctOption || ''} mnemonicHint={mnemonicHint} onComplete={handleTestComplete} delayMs={400} />
+                ) : (
+                  <div className="w-full max-w-sm grid grid-cols-1 gap-3">
+                    <div className="h-10 rounded-xl bg-surface/40 animate-pulse" />
+                    <div className="h-10 rounded-xl bg-surface/40 animate-pulse" />
+                    <div className="h-10 rounded-xl bg-surface/40 animate-pulse" />
+                    <div className="h-10 rounded-xl bg-surface/40 animate-pulse" />
+                  </div>
+                )}
               </div>
             )}
           </motion.div>

@@ -14,6 +14,7 @@ import { HorizontalWordLists } from "@/components/ui/horizontal-word-lists";
 import { LogoutConfirmModal } from "@/components/ui/logout-confirm-modal";
 import { CreateWordListModal } from "@/components/ui/create-wordlist-modal";
 import { motion } from "framer-motion";
+import { useDueReviews } from "@/hooks/useDueReviews";
 
 function HomePageContent() {
   const { user, signOut } = useAuth();
@@ -21,6 +22,7 @@ function HomePageContent() {
   const [showLogoutModal, setShowLogoutModal] = useState(false);
   const [isLoggingOut, setIsLoggingOut] = useState(false);
   const { success, error } = useToast();
+  const { data: dueData, isLoading: dueLoading } = useDueReviews(100);
 
   const handleSearch = (query: string) => {
     const trimmedQuery = query.trim();
@@ -37,8 +39,7 @@ function HomePageContent() {
   };
 
   const handleReviewClick = () => {
-    console.log("开始复习");
-    // TODO: 导航到复习页面
+    router.push('/review');
   };
 
   const handleWordListClick = (listId: number) => {
@@ -79,9 +80,9 @@ function HomePageContent() {
 
   // FSRS算法模拟数据
   const fsrsData = {
-    dueForReview: 15,    // 今日待复习
-    newToLearn: 28,      // 待学习新词
-    totalLearned: 243,   // 总计学习过的词
+    dueForReview: dueLoading ? null : ((dueData?.reviews?.length ?? 0) as number | null),
+    newToLearn: 28,
+    totalLearned: 243,
   };
 
   const fadeUpVariants = {
@@ -165,9 +166,9 @@ function HomePageContent() {
           className="grid grid-cols-2 gap-12 mb-12 max-w-2xl mx-auto"
         >
           <div className="text-center">
-            <h3 className="text-sm text-muted mb-3">今日复习</h3>
+            <h3 className="text-sm text-muted mb-3">今日待复习</h3>
             <div className="flex items-baseline justify-center gap-2 mb-2">
-              <span className="text-4xl font-bold text-foreground">{fsrsData.dueForReview}</span>
+              <span className="text-4xl font-bold text-foreground">{fsrsData.dueForReview ?? '—'}</span>
               <span className="text-sm text-muted">词</span>
             </div>
             <div className="flex items-center justify-center gap-1">

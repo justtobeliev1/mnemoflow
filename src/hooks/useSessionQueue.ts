@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useLearningQueue, type LearningWord } from '@/hooks/useLearningQueue';
 import { useReviewSession, ReviewQuiz } from '@/hooks/useReviewSession';
+import { useDueReviews } from '@/hooks/useDueReviews';
 import { usePromptBlueprint } from '@/hooks/usePromptBlueprint';
 
 export type SessionMode = 'learn' | 'review';
@@ -12,6 +13,7 @@ export interface UseSessionQueueOptions {
   limit?: number;
   n?: number;
   enableT?: boolean; // 学习模式是否启用延迟测试队列T
+  source?: 'session' | 'due'; // review 模式数据源：默认 session，可切换为 due 清单
 }
 
 export interface SessionWordLite {
@@ -52,9 +54,11 @@ export function useSessionQueue(mode: SessionMode, opts: UseSessionQueueOptions 
   const limit = opts.limit ?? 20;
   const n = opts.n ?? 2;
   const enableT = opts.enableT ?? true;
+  const reviewSource = opts.source ?? 'session';
 
   const learn = useLearningQueue(mode === 'learn' ? opts.listId : undefined, limit);
-  const review = useReviewSession(undefined, limit, mode === 'review');
+  const review = useReviewSession(undefined, limit, mode === 'review' && reviewSource === 'session');
+  const due = useDueReviews(limit);
 
   const [index, setIndex] = useState(0);
   const [queueState, setQueueState] = useState<SessionWordLite[]>([]);
@@ -65,9 +69,14 @@ export function useSessionQueue(mode: SessionMode, opts: UseSessionQueueOptions 
   const lastLearnedRef = useRef<number | null>(null);
 
   const reviewQueue: SessionWordLite[] = useMemo((): SessionWordLite[] => {
-    if (mode !== 'review' || !review.quizzes) return [];
-    return review.quizzes.map((q: ReviewQuiz, i: number) => ({ id: q.quiz_word_id, word: `#${i + 1}` }));
-  }, [review.quizzes, mode]);
+    if (mode !== 'review') return [];
+    if (reviewSource === 'session') {
+      if (!review.quizzes) return [];
+      return review.quizzes.map((q: ReviewQuiz, i: number) => ({ id: q.quiz_word_id, word: `#${i + 1}` }));
+    }
+    const items = (due as any).data?.reviews ?? [];
+    return items.map((x: any) => ({ id: x.word_id, word: x.word }));
+  }, [mode, reviewSource, review.quizzes, (due as any).data?.reviews]);
 
   const learnQueue: SessionWordLite[] = useMemo((): SessionWordLite[] => {
     if (mode !== 'learn' || !learn.words) return [];
@@ -158,8 +167,8 @@ export function useSessionQueue(mode: SessionMode, opts: UseSessionQueueOptions 
   function peekDelayed(): number | null { return delayedRef.current.length ? delayedRef.current[0] : null; }
   function shiftDelayed(): number | null { return delayedRef.current.shift() ?? null; }
 
-  const loading = mode === 'learn' ? learn.loading : review.loading;
-  const error = mode === 'learn' ? learn.error : review.error;
+  const loading = mode === 'learn' ? learn.loading : (reviewSource === 'session' ? review.loading : ((due as any).isLoading as boolean));
+  const error = mode === 'learn' ? learn.error : (reviewSource === 'session' ? review.error : ((((due as any).error as any)?.message) ?? null));
 
   const forceTestForCurrent = current ? forceTestSetRef.current.has(current.id) : false;
 
