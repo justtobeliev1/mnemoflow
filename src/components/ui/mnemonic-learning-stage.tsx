@@ -7,6 +7,7 @@ import { AIChatSidebar } from '@/components/ui/AIChatSidebar';
 import { useMnemonic } from '@/hooks/useMnemonic';
 import { renderHighlightedHtml } from '@/utils/highlight';
 import { useAuth } from '@/contexts/AuthContext';
+import { parseDefinition } from '@/utils/definition';
 
 export interface DefinitionItem { pos: string; meaning: string }
 
@@ -35,6 +36,36 @@ function calculateGap(width: number) {
 
 export function MnemonicLearningStage(props: MnemonicLearningStageProps) {
   const { word, phonetic, definitions, tags = [], senses, blueprint, scenario, example, wordId } = props;
+
+  // ---- Fallback: fetch dictionary defs if empty ----
+  const [defs, setDefs] = useState<DefinitionItem[]>(definitions);
+
+  useEffect(() => {
+    if (definitions.length > 0) { setDefs(definitions); return; }
+
+    const LS_KEY = `def-cache:${word}`;
+    const cached = (() => {
+      try { return JSON.parse(localStorage.getItem(LS_KEY) || 'null'); } catch { return null; }
+    })();
+    if (cached && Array.isArray(cached.items) && Date.now() - cached.ts < 7*24*60*60*1000) {
+      setDefs(cached.items);
+      return;
+    }
+
+    fetch(`/api/words/search/${encodeURIComponent(word)}`, {
+      headers: session?.access_token ? { 'Authorization': `Bearer ${session.access_token}` } : undefined,
+    })
+      .then(r => r.ok ? r.json() : null)
+      .then(body => {
+        const def = body?.word?.definition ?? null;
+        const items = def ? parseDefinition(def) : [];
+        if (items.length) {
+          setDefs(items as any);
+          try { localStorage.setItem(LS_KEY, JSON.stringify({ ts: Date.now(), items })); } catch {}
+        }
+      })
+      .catch(() => {});
+  }, [word, definitions]);
 
   const [containerWidth, setContainerWidth] = useState(1200);
   const [isChatOpen, setChatOpen] = useState(false);
@@ -81,13 +112,13 @@ export function MnemonicLearningStage(props: MnemonicLearningStageProps) {
 
   const grouped = useMemo(() => {
     const map: Record<string, string[]> = {};
-    for (const d of definitions) {
+    for (const d of defs) {
       const key = d.pos || '—';
       if (!map[key]) map[key] = [];
       map[key].push(d.meaning);
     }
     return map;
-  }, [definitions]);
+  }, [defs]);
 
   const handleRegenerate = () => {
     setIsLoading(true);

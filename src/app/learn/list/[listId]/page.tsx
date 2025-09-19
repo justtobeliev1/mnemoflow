@@ -71,6 +71,7 @@ export default function LearnListPage({ params }: { params: { listId: string } }
 
         {resolvedListId && S.current && (
           <ReviewFlowStage
+            flow="learn"
             wordId={S.current.id}
             word={S.current.word}
             phonetic={undefined}
@@ -81,13 +82,14 @@ export default function LearnListPage({ params }: { params: { listId: string } }
             correctOption={opt?.correct ?? ''}
             mnemonicHint={S.mnemonicHint}
             onNextWord={() => S.next()}
+            forceTestForCurrent={S.forceTestForCurrent}
+            enqueueRelearn={(id) => S.enqueueRelearn(id)}
+            clearForceTest={(id) => S.clearForceTest(id)}
           />
         )}
 
-        {resolvedListId && S.current && S.atBatchEnd && (
-          <div className="absolute inset-x-0 bottom-10">
-            <BreakScreen onContinue={() => S.next()} onExit={() => { window.location.href = '/'; }} title="已完成一轮学习！" description={'做得不错！你已经成功完成了20个单词的深度学习。\n继续或休息，一切取决于你。'} primaryLabel="继续下一轮" secondaryLabel="这次就到这里" />
-          </div>
+        {resolvedListId && !S.loading && !S.current && (
+          <BreakScreen fullScreen title="已完成一轮学习！" description={'做得不错！你已经成功完成了20个单词的深度学习。\n继续或休息，一切取决于你。'} onContinue={() => { window.location.reload(); }} onExit={() => { window.location.href = '/'; }} primaryLabel="再来一轮" secondaryLabel="返回主页" />
         )}
       </main>
     </div>

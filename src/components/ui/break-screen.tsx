@@ -1,36 +1,55 @@
 "use client";
 
+import React from 'react';
+
 export interface BreakScreenProps {
   title?: string;
   description?: string;
-  onContinue?: () => void;
-  onExit?: () => void;
   primaryLabel?: string;
   secondaryLabel?: string;
+  onContinue?: () => void;
+  onExit?: () => void;
+  fullScreen?: boolean; // center in a clean page
+  minimal?: boolean; // no card, pure text
 }
 
-export function BreakScreen({
-  title = 'Congrats！本轮已完成。',
-  description,
-  onContinue,
-  onExit,
-  primaryLabel = '开始下一轮',
-  secondaryLabel = '返回首页',
-}: BreakScreenProps) {
-  return (
-    <div className="w-full flex flex-col items-center justify-center text-center gap-6 py-16">
-      <h2 className="text-2xl md:text-3xl font-extrabold text-foreground">{title}</h2>
-      {description && <p className="text-muted max-w-2xl whitespace-pre-line">{description}</p>}
-      <div className="flex gap-3">
-        {onContinue && (
-          <button className="px-5 py-2 rounded-lg bg-primary text-primary-foreground" onClick={onContinue}>{primaryLabel}</button>
-        )}
-        {onExit && (
-          <button className="px-5 py-2 rounded-lg border border-border" onClick={onExit}>{secondaryLabel}</button>
-        )}
+export function BreakScreen({ title='会话完成', description, primaryLabel='继续', secondaryLabel='退出', onContinue, onExit, fullScreen=false, minimal=false }: BreakScreenProps) {
+  const core = (
+    <div className="flex flex-col items-center justify-center gap-4">
+      {title && <h2 className="text-3xl font-extrabold bg-gradient-to-r from-gradient-indigo via-gradient-white to-gradient-rose bg-clip-text text-transparent text-center">{title}</h2>}
+      {description && <p className="text-muted whitespace-pre-line text-center max-w-2xl">{description}</p>}
+      <div className="flex items-center justify-center gap-3 mt-2">
+        {onContinue && <button className="px-4 py-2 rounded-md bg-primary text-primary-foreground" onClick={onContinue}>{primaryLabel}</button>}
+        {onExit && <button className="px-4 py-2 rounded-md border border-border" onClick={onExit}>{secondaryLabel}</button>}
       </div>
     </div>
   );
+
+  if (minimal) {
+    return fullScreen ? (
+      <div className="fixed inset-0 z-40 flex items-center justify-center">
+        {core}
+      </div>
+    ) : core;
+  }
+
+  const card = (
+    <div className="inset-0 flex items-center justify-center">
+      <div className="text-center px-6 py-8 rounded-2xl border border-border bg-surface/60 backdrop-blur-md shadow-lg max-w-xl w-[92vw]">
+        {core}
+      </div>
+    </div>
+  );
+
+  if (fullScreen) {
+    return (
+      <div className="fixed inset-0 z-40">
+        {card}
+      </div>
+    );
+  }
+
+  return card;
 }
 
 export default BreakScreen;

@@ -11,6 +11,7 @@ export interface UseSessionQueueOptions {
   listId?: number;
   limit?: number;
   n?: number;
+  enableT?: boolean; // 学习模式是否启用延迟测试队列T
 }
 
 export interface SessionWordLite {
@@ -38,21 +39,30 @@ export interface UseSessionQueueResult {
   shiftDelayed: () => number | null;
   loading: boolean;
   error: string | null;
-  // 仅在 learn 模式下可用：提供带 definition 的原始数据，便于页面本地生成选项
   learnWordsDetailed?: LearningWord[];
+  forceTestForCurrent: boolean;
+  // T 队列（仅学习）：入队与查看
+  enqueueToTest?: (wordId: number) => void;
+  peekTest?: () => number | null;
+  shiftTest?: () => number | null;
+  clearForceTest: (id: number) => void;
 }
 
 export function useSessionQueue(mode: SessionMode, opts: UseSessionQueueOptions = {}): UseSessionQueueResult {
   const limit = opts.limit ?? 20;
   const n = opts.n ?? 2;
+  const enableT = opts.enableT ?? true;
 
   const learn = useLearningQueue(mode === 'learn' ? opts.listId : undefined, limit);
-  // 仅复习模式才请求会话，避免学习页多余的 /review/session 请求
   const review = useReviewSession(undefined, limit, mode === 'review');
 
   const [index, setIndex] = useState(0);
+  const [queueState, setQueueState] = useState<SessionWordLite[]>([]);
   const delayedRef = useRef<number[]>([]);
   const relearnRef = useRef<number[]>([]);
+  const forceTestSetRef = useRef<Set<number>>(new Set());
+  const testQueueRef = useRef<number[]>([]); // 学习模式 T 队
+  const lastLearnedRef = useRef<number | null>(null);
 
   const reviewQueue: SessionWordLite[] = useMemo((): SessionWordLite[] => {
     if (mode !== 'review' || !review.quizzes) return [];
@@ -64,9 +74,18 @@ export function useSessionQueue(mode: SessionMode, opts: UseSessionQueueOptions 
     return learn.words.map(w => ({ id: w.id, word: w.word }));
   }, [learn.words, mode]);
 
-  const queue = mode === 'learn' ? learnQueue : reviewQueue;
+  useEffect(() => {
+    const base = mode === 'learn' ? learnQueue : reviewQueue;
+    setQueueState(base);
+    setIndex(0);
+    delayedRef.current = [];
+    relearnRef.current = [];
+    forceTestSetRef.current.clear();
+    testQueueRef.current = [];
+    lastLearnedRef.current = null;
+  }, [mode, learnQueue.length, reviewQueue.length]);
 
-  useEffect(() => { setIndex(0); }, [mode, queue.length]);
+  const queue = queueState;
 
   const current = queue[index] || null;
   const hasMore = index + 1 < queue.length;
@@ -74,14 +93,12 @@ export function useSessionQueue(mode: SessionMode, opts: UseSessionQueueOptions 
   const batchEnd = Math.min(batchStart + limit, queue.length);
   const atBatchEnd = index === batchEnd - 1 || queue.length === 0;
 
-  // 复习模式下才从会话中匹配选择题；学习模式可按需另行获取
   const quizForCurrentWord = useMemo(() => {
     if (!current) return null;
     if (mode === 'review') {
       if (!review.quizzes) return null;
       return review.quizzes.find((q: any) => q.quiz_word_id === current.id) || null;
     }
-    // learn 模式下，选项在页面层按需获取
     return null;
   }, [mode, current?.id, review.quizzes]);
 
@@ -91,22 +108,67 @@ export function useSessionQueue(mode: SessionMode, opts: UseSessionQueueOptions 
   })();
 
   function next() {
-    const remaining = queue.length - (index + 1);
-    if (relearnRef.current.length > 0 && remaining > 0) {
-      // 插入策略留给后端会话生成，此处不修改主队列，避免前端与后端不一致。
+    let q = queue.slice();
+    let nextIndex = index + 1;
+
+    // 学习模式：学习编码完成后，将 current 入 T，并在下一步优先测试 T 队首（若不是刚学的）
+    if (mode === 'learn' && current && enableT) {
+      testQueueRef.current.push(current.id);
+      lastLearnedRef.current = current.id;
+      const head = testQueueRef.current[0];
+      if (head && head !== current.id) {
+        testQueueRef.current.shift();
+        const existsIndex = q.findIndex(w => w.id === head);
+        const insertPos = Math.min(index + 1, q.length);
+        if (existsIndex === -1) {
+          q.splice(insertPos, 0, { id: head, word: `#${head}` });
+        }
+        forceTestSetRef.current.add(head);
+      }
     }
-    if (index + 1 < queue.length) setIndex(index + 1);
+
+    // 穿插重学：使用入参 n（学习场景可传 1，复习场景可传 2）
+    if (relearnRef.current.length > 0) {
+      const wordId = relearnRef.current.shift()!;
+      const existsIndex = q.findIndex(w => w.id === wordId);
+      if (existsIndex !== -1) {
+        const [item] = q.splice(existsIndex, 1);
+        // 若移除位置在当前或之前，下一项索引左移一位
+        if (existsIndex <= index) nextIndex = index; else nextIndex = index + 1;
+        const remAfter = q.length - (index + 1);
+        const targetPos = remAfter > n ? index + n + 1 : q.length;
+        q.splice(Math.min(targetPos, q.length), 0, item);
+      } else {
+        const remaining = q.length - (index + 1);
+        const targetPos = remaining > n ? index + n + 1 : q.length;
+        q.splice(Math.min(targetPos, q.length), 0, { id: wordId, word: `#${wordId}` });
+      }
+      forceTestSetRef.current.add(wordId);
+    }
+
+    setQueueState(q);
+    // 允许 index 走到 q.length，以便 current 变为 null → 触发会话小结
+    if (q.length === 0) setIndex(0); else setIndex(nextIndex);
   }
   function prev() { if (index > 0) setIndex(index - 1); }
-  function reset() { setIndex(0); delayedRef.current = []; relearnRef.current = []; }
+  function reset() { setIndex(0); delayedRef.current = []; relearnRef.current = []; forceTestSetRef.current.clear(); testQueueRef.current = []; lastLearnedRef.current = null; }
 
-  function enqueueRelearn(wordId: number) { if (!relearnRef.current.includes(wordId)) relearnRef.current.push(wordId); }
+  function enqueueRelearn(wordId: number) { if (!relearnRef.current.includes(wordId)) relearnRef.current.push(wordId); forceTestSetRef.current.add(wordId); }
   function enqueueDelayed(wordId: number) { delayedRef.current.push(wordId); }
   function peekDelayed(): number | null { return delayedRef.current.length ? delayedRef.current[0] : null; }
   function shiftDelayed(): number | null { return delayedRef.current.shift() ?? null; }
 
   const loading = mode === 'learn' ? learn.loading : review.loading;
   const error = mode === 'learn' ? learn.error : review.error;
+
+  const forceTestForCurrent = current ? forceTestSetRef.current.has(current.id) : false;
+
+  function clearForceTest(id: number) { forceTestSetRef.current.delete(id); }
+
+  // T 队接口（学习）
+  const enqueueToTest = (wordId: number) => { testQueueRef.current.push(wordId); };
+  const peekTest = () => testQueueRef.current.length ? testQueueRef.current[0] : null;
+  const shiftTest = () => (testQueueRef.current.shift() ?? null);
 
   return {
     mode,
@@ -129,5 +191,10 @@ export function useSessionQueue(mode: SessionMode, opts: UseSessionQueueOptions 
     loading,
     error,
     learnWordsDetailed: mode === 'learn' ? learn.words : undefined,
+    forceTestForCurrent,
+    clearForceTest,
+    enqueueToTest: mode === 'learn' ? enqueueToTest : undefined,
+    peekTest: mode === 'learn' ? peekTest : undefined,
+    shiftTest: mode === 'learn' ? shiftTest : undefined,
   };
 }

@@ -10,6 +10,7 @@ import { ChoiceTestPanel, ChoiceResult } from '@/components/ui/choice-test-panel
 import { NextArrowButton } from '@/components/ui/next-arrow-button';
 import type { FSRSRating } from '@/lib/validators/review.schemas';
 import { useAuth } from '@/contexts/AuthContext';
+import { useSessionQueue } from '@/hooks/useSessionQueue';
 import { DictionaryStackContainer } from '@/components/ui/dictionary-stack-container';
 
 export type ReviewStageMode =
@@ -19,6 +20,7 @@ export type ReviewStageMode =
   | { kind: 'review_stage' };
 
 export interface ReviewFlowStageProps {
+  flow?: 'learn' | 'review';
   wordId: number;
   word: string;
   phonetic?: string;
@@ -29,12 +31,31 @@ export interface ReviewFlowStageProps {
   correctOption?: string;
   mnemonicHint?: string;
   onNextWord?: () => void;
+  // 来自队列：可选的强制测试标志与 R/T 队操作
+  forceTestForCurrent?: boolean;
+  enqueueRelearn?: (wordId: number) => void;
+  clearForceTest?: (wordId: number) => void;
 }
 
 export function ReviewFlowStage(props: ReviewFlowStageProps) {
-  const { wordId, word, phonetic, definitions, tags, promptText = word, options = [], correctOption, mnemonicHint, onNextWord } = props;
+  const { flow = 'review', wordId, word, phonetic, definitions, tags, promptText = word, options = [], correctOption, mnemonicHint, onNextWord, forceTestForCurrent, enqueueRelearn, clearForceTest } = props;
   const [mode, setMode] = useState<ReviewStageMode>({ kind: 'idle' });
   const { session } = useAuth();
+
+  // 切换新单词时：
+  // - 学习页：从 ReviewStage 开始
+  // - 复习页：默认 PathSelector；若标记强制测试则直达测试
+  useEffect(() => {
+    if (flow === 'learn') {
+      setMode({ kind: 'review_stage' });
+      return;
+    }
+    if (forceTestForCurrent) {
+      setMode({ kind: 'test' });
+    } else {
+      setMode({ kind: 'idle' });
+    }
+  }, [wordId, forceTestForCurrent, flow]);
 
   const [promptLoading, setPromptLoading] = useState(false);
 
@@ -69,6 +90,12 @@ export function ReviewFlowStage(props: ReviewFlowStageProps) {
       setMode({ kind: 'review_stage' });
     }
     submitQuiz(rating);
+    if (rating === 'hard' || rating === 'again') {
+      enqueueRelearn?.(wordId);
+    } else {
+      // easy/good 结束强制标记
+      clearForceTest?.(wordId);
+    }
   }
 
   function handlePathSelect(sel: PathSelection) {
@@ -79,15 +106,19 @@ export function ReviewFlowStage(props: ReviewFlowStageProps) {
   function handleTestComplete(result: ChoiceResult) {
     if (result === 'first_try') {
       submitQuiz('good');
+      // 首次即正确：清除强测标志
+      clearForceTest?.(wordId);
       onNextWord?.();
       return;
     }
     const rating: FSRSRating = result === 'second_try' ? 'hard' : 'again';
     setMode({ kind: 'review_stage' });
     submitQuiz(rating);
+     enqueueRelearn?.(wordId);
+     // 只有首次答对（first_try）才清除强制标记；否则保持强制测试
   }
 
-  const t = { duration: 0.1 } as const;
+  const t = { duration: 0.25, ease: 'easeInOut' } as const;
 
   if (mode.kind === 'review_stage') {
     return (
@@ -103,7 +134,18 @@ export function ReviewFlowStage(props: ReviewFlowStageProps) {
           scenario={''}
           example={{ en: '', zh: '' }}
         />
-        <div className="mt-4 flex justify-end"><NextArrowButton label="下一项 →" onClick={() => onNextWord?.()} /></div>
+        <div className="mt-4 flex justify-end">
+          <NextArrowButton
+            label="下一项 →"
+            onClick={() => {
+              // 若为复习流程且当前单词被标记强制测试，则直接切换到测试视图，避免末尾仅剩 R 时无法再次强测
+              if (flow === 'review' && forceTestForCurrent) {
+                setMode({ kind: 'test' });
+              }
+              onNextWord?.();
+            }}
+          />
+        </div>
       </div>
     );
   }
@@ -112,10 +154,14 @@ export function ReviewFlowStage(props: ReviewFlowStageProps) {
     <div className="w-full">
       <div className="grid grid-cols-1 md:grid-cols-2 gap-8 items-start">
         {/* Left side */}
-        <AnimatePresence mode="sync">
+        <AnimatePresence mode="wait">
           <motion.div key={leftKey} initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} transition={t}>
             {mode.kind === 'idle' && (
-              <PathSelector word={word} onSelect={handlePathSelect} />
+              forceTestForCurrent ? (
+                <WordPromptStack prompt={promptText} isLoading={promptLoading} />
+              ) : (
+                <PathSelector word={word} onSelect={handlePathSelect} />
+              )
             )}
             {mode.kind === 'self_assess' && (
               <DictionaryStackContainer word={word} />
@@ -127,10 +173,16 @@ export function ReviewFlowStage(props: ReviewFlowStageProps) {
         </AnimatePresence>
 
         {/* Right side */}
-        <AnimatePresence mode="sync">
+        <AnimatePresence mode="wait">
           <motion.div key={rightKey} initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} transition={t}>
             {mode.kind === 'idle' && (
-              <div className="min-h-[460px]" />
+              forceTestForCurrent ? (
+                <div className="min-h-[460px] w-full flex items-center justify-center">
+                  <ChoiceTestPanel word={word} options={options} correct={correctOption || ''} mnemonicHint={mnemonicHint} onComplete={handleTestComplete} delayMs={400} />
+                </div>
+              ) : (
+                <div className="min-h-[460px]" />
+              )
             )}
             {mode.kind === 'self_assess' && (
               <div className="min-h-[460px] w-full flex items-center justify-center">

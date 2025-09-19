@@ -14,6 +14,15 @@ export interface ChoiceTestPanelProps {
   delayMs?: number; // 完成前的停留时长，默认500ms
 }
 
+function shuffleArray<T>(arr: T[]): T[] {
+  const a = arr.slice();
+  for (let i = a.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [a[i], a[j]] = [a[j], a[i]];
+  }
+  return a;
+}
+
 export function ChoiceTestPanel({ word, options, correct, mnemonicHint, onComplete, delayMs = 200 }: ChoiceTestPanelProps) {
   const [selectedWrong, setSelectedWrong] = useState<Set<string>>(new Set());
   const [showHint, setShowHint] = useState(false);
@@ -21,7 +30,8 @@ export function ChoiceTestPanel({ word, options, correct, mnemonicHint, onComple
   const [correctSelected, setCorrectSelected] = useState<string | null>(null);
 
   const shuffled = useMemo(() => {
-    return [...options];
+    // 打散选项，但保持字符串相等判断即可识别正确项
+    return shuffleArray(options);
   }, [options]);
 
   function handleClick(opt: string) {

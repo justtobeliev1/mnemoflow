@@ -29,6 +29,7 @@ export default function ReviewPage() {
 
         {!empty && S.current && (
           <ReviewFlowStage
+            flow="review"
             wordId={S.current.id}
             word={S.current.word}
             phonetic={undefined}
@@ -39,20 +40,14 @@ export default function ReviewPage() {
             correctOption={S.quizForCurrentWord ? S.quizForCurrentWord.options[0].word : undefined}
             mnemonicHint={S.mnemonicHint}
             onNextWord={() => S.next()}
+            forceTestForCurrent={S.forceTestForCurrent}
+            enqueueRelearn={(id) => S.enqueueRelearn(id)}
+            clearForceTest={(id) => S.clearForceTest(id)}
           />
         )}
 
-        {!empty && S.current && S.atBatchEnd && (
-          <div className="absolute inset-x-0 bottom-10">
-            <BreakScreen
-              title="已完成一轮复习！"
-              description={'做得不错！你已经成功完成了20个单词的深度复习。\n继续或休息，一切取决于你。'}
-              onContinue={() => S.next()}
-              onExit={() => { window.location.href = '/'; }}
-              primaryLabel="继续下一轮"
-              secondaryLabel="这次就到这里"
-            />
-          </div>
+        {!empty && !S.current && (
+          <BreakScreen fullScreen title="已完成一轮复习！" description={'做得不错！你已经成功完成了20个单词的深度复习。\n继续或休息，一切取决于你。'} onContinue={() => { window.location.reload(); }} onExit={() => { window.location.href = '/'; }} primaryLabel="再来一轮" secondaryLabel="返回主页" />
         )}
       </main>
     </div>
