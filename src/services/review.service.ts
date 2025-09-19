@@ -244,3 +244,98 @@ export async function updateWordProgressForUser({
 
   return updatedProgress;
 }
+
+// --- New: Server-side FSRS computation using ts-fsrs ---
+import { fsrs as createFsrs, Rating as FsrsRatingEnum, State as FsrsState, Card as FsrsCard } from 'ts-fsrs';
+
+export async function submitQuizAnswerAndUpdateProgress({
+  supabase,
+  userId,
+  wordId,
+  userRating,
+}: BaseArgs & { wordId: number; userRating: 'again' | 'hard' | 'good' | 'easy' }) {
+  // 1) 读取当前学习进度
+  const { data: progress, error: fetchError } = await supabase
+    .from('user_word_progress')
+    .select('*')
+    .eq('user_id', userId)
+    .eq('word_id', wordId)
+    .single();
+
+  if (fetchError || !progress) {
+    throw createNotFoundError('学习记录');
+  }
+
+  // 2) 数据库 -> FSRS Card 映射
+  const now = new Date();
+  const lastReview: Date | undefined = progress.last_review ? new Date(progress.last_review) : undefined;
+  const due: Date = progress.due ? new Date(progress.due) : now;
+
+  const dbState: number = progress.state ?? 0;
+  const stateMap: Record<number, FsrsState> = {
+    0: FsrsState.New,
+    1: FsrsState.Learning,
+    2: FsrsState.Review,
+    3: FsrsState.Relearning,
+  } as any;
+
+  const card: Partial<FsrsCard> = {
+    due,
+    stability: progress.stability ?? undefined,
+    difficulty: progress.difficulty ?? undefined,
+    lapses: progress.lapses ?? 0,
+    state: stateMap[dbState] ?? FsrsState.New,
+    last_review: lastReview,
+    reps: progress.reps ?? 0,
+    scheduled_days: progress.scheduled_days ?? 0,
+  };
+
+  // 3) 用户评级 -> FSRS Rating
+  const ratingMap: Record<string, FsrsRatingEnum> = {
+    again: FsrsRatingEnum.Again,
+    hard: FsrsRatingEnum.Hard,
+    good: FsrsRatingEnum.Good,
+    easy: FsrsRatingEnum.Easy,
+  };
+  const ratingEnum = ratingMap[userRating];
+
+  const f = createFsrs();
+  // 使用 repeat 并挑选用户评级对应的结果（保持与题述一致）
+  const result = f.repeat(card as FsrsCard, now);
+  const next = (result as any)[ratingEnum].card as FsrsCard;
+
+  // 4) FSRS Card -> 数据库
+  const updateData = {
+    due: next.due ? new Date(next.due as any).toISOString() : new Date().toISOString(),
+    stability: next.stability ?? null,
+    difficulty: next.difficulty ?? null,
+    lapses: typeof next.lapses === 'number' ? next.lapses : progress.lapses ?? 0,
+    state: ((): number => {
+      const reverse: Record<number, number> = {
+        [FsrsState.New]: 0,
+        [FsrsState.Learning]: 1,
+        [FsrsState.Review]: 2,
+        [FsrsState.Relearning]: 3,
+      } as any;
+      return reverse[next.state as any] ?? progress.state ?? 0;
+    })(),
+    last_review: now.toISOString(),
+    reps: typeof next.reps === 'number' ? next.reps : (progress.reps ?? 0) + 1,
+    scheduled_days: typeof next.scheduled_days === 'number' ? next.scheduled_days : progress.scheduled_days ?? 0,
+  };
+
+  // 5) 更新数据库
+  const { data: updated, error: updError } = await (supabase as any)
+    .from('user_word_progress')
+    .update(updateData)
+    .eq('user_id', userId)
+    .eq('word_id', wordId)
+    .select()
+    .single();
+
+  if (updError) {
+    throw new AppError(`更新学习进度失败: ${updError.message}`, 500);
+  }
+
+  return updated;
+}

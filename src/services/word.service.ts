@@ -46,6 +46,48 @@ export async function findWordByText({
   return data;
 }
 
+// 初始化学习进度（若不存在）
+export async function ensureProgressForUserWord({
+  supabase,
+  userId,
+  wordId,
+  listId,
+}: BaseArgs & { wordId: number; listId?: number }) {
+  const { data: existing } = await supabase
+    .from('user_word_progress')
+    .select('id')
+    .eq('user_id', userId)
+    .eq('word_id', wordId)
+    .maybeSingle();
+
+  if (existing?.id) return existing;
+
+  const now = new Date().toISOString();
+  const insert = {
+    user_id: userId,
+    word_id: wordId,
+    word_list_id: listId ?? null,
+    due: now,
+    stability: 2.7,
+    difficulty: 5.0,
+    lapses: 0,
+    state: 0,
+    last_review: null,
+    reps: 0,
+    scheduled_days: 0,
+    created_at: now,
+  } as any;
+
+  const { data: created, error } = await (supabase as any)
+    .from('user_word_progress')
+    .insert(insert)
+    .select('id')
+    .single();
+
+  if (error) throw new AppError(`初始化学习进度失败: ${error.message}`, 500);
+  return created;
+}
+
 /**
  * 收录单词到用户的学习列表
  * 

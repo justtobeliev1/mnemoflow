@@ -76,6 +76,14 @@
 - **响应**: 删除确认
 - **实现文件**: `src/app/api/me/word-lists/[listId]/route.ts`
 
+#### 12. 获取单词本详情（按名称）
+- **端点**: `GET /api/me/word-lists/by-name/{name}`
+- **功能**: 根据单词本的**精确名称**查询单个单词本详细信息。
+- **认证**: 必须
+- **路径参数**: `name` - 需要进行 URL 编码的单词本名称。
+- **响应**: `200 OK` 返回匹配对象；`404 Not Found` 未找到。
+- **实现文件**: `src/app/api/me/word-lists/by-name/[name]/route.ts`
+
 ### 📝 词汇管理
 
 #### 12. 收录单词
@@ -187,28 +195,37 @@
 - **实现文件**: `src/app/api/me/review/session/route.ts`
 - **数据库函数**: `public.generate_review_session(p_user_id uuid, p_limit int)`
 
-#### 22. 提交测验结果（NEW）
+#### 22. 提交测验结果（NEW，服务器端 FSRS 计算）
 - **端点**: `POST /api/me/quiz/submit`
-- **功能**: 原子化处理单次作答：后端判定正误并更新 FSRS 进度。
+- **功能**: 原子化处理一次作答：后端读取 `user_word_progress` 的旧状态并调用 [`ts-fsrs`](https://www.npmjs.com/package/ts-fsrs) 计算新状态，将包含 `reps` 与 `scheduled_days` 在内的所有字段写回数据库。
 - **认证**: 必须
 - **请求体**:
 ```json
 {
   "quiz_word_id": 123,
-  "selected_word_id": 123,
-  "rating": "good"
+  "rating": "good"  // one of again|hard|good|easy
 }
 ```
 - **响应**:
 ```json
 {
-  "is_correct": true,
-  "updated_progress": { "word_id": 123, "due": "2025-09-17T12:00:00Z", "stability": 6.75, ... }
+  "updated_progress": {
+    "word_id": 123,
+    "due": "2025-09-17T12:00:00Z",
+    "stability": 6.75,
+    "difficulty": 4.8,
+    "state": 2,
+    "last_review": "2025-09-16T12:00:00Z",
+    "reps": 10,
+    "scheduled_days": 5
+  }
 }
 ```
 - **实现文件**: `src/app/api/me/quiz/submit/route.ts`
-- **服务层**: `src/services/review.service.ts` (`updateWordProgressForUser`)
-- **验证器**: `src/lib/validators/review.schemas.ts` (`FSRSRatingSchema`)
+- **服务层**: `src/services/review.service.ts` → `submitQuizAnswerAndUpdateProgress`
+- **依赖**: `ts-fsrs`（使用 `fsrs().repeat(card, now)` 并根据用户评级取对应 `card`，再落库）
+
+> 说明：旧的 `PATCH /api/me/review/progress/{wordId}` 已废弃。请全部改用 `POST /api/me/quiz/submit`。
 
 ### 🧠 AI 助记功能
 
@@ -350,26 +367,6 @@ src/
     ├── mnemonic.service.ts
     └── chat.service.ts
 ```
-
-## 更新日志
-
-- ✅ 完成所有20个API端点的实现（旧 `/words/[wordId]/chats` 已废弃，新增 `/api/ai/chat` & `/api/me/chat-history`）
-- ✅ 修复路由冲突：将 `GET /api/words/{searchTerm}` 移动到 `GET /api/words/search/{searchTerm}`
-- ✅ 新增复习会话端点：`GET /api/me/review/session`（替代旧队列端点）
-- ✅ 新增作答提交端点：`POST /api/me/quiz/submit`（替代旧进度更新端点）
-- ⚠️ 标注废弃：`GET /api/me/review/queue` 与 `PATCH /api/me/review/progress/{wordId}`
-- ✅ 采用函数式架构，使用参数注入模式
-- ✅ 集成FSRS算法用于智能复习调度
-- ✅ 实现异步AI内容生成和轮询机制
-- ✅ 完整的Zod验证和错误处理系统
-- ✅ 实现单词查询页面前端功能
-  - 单词详情展示页面 (`/words/[word]`)
-  - 音标解析和浏览器发音功能
-  - 标签解析和分类显示
-  - 收藏到单词本功能
-  - 完整的加载状态和错误处理
-  - 响应式设计和glassmorphism主题
-
 ---
 
 **注意**: 此文档会随着API的更新而持续维护更新。如有任何API变更，请及时更新此文档。

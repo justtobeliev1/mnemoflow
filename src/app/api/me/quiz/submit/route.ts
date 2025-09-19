@@ -1,43 +1,28 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { z } from 'zod';
 import { validateAuth } from '@/lib/supabase-server';
-import { handleApiError } from '@/lib/errors';
-import { FSRSRatingSchema } from '@/lib/validators/review.schemas';
-import { updateWordProgressForUser } from '@/services/review.service';
+import { handleApiError, createValidationError } from '@/lib/errors';
+import { submitQuizAnswerAndUpdateProgress } from '@/services/review.service';
 
-const SubmitSchema = z.object({
-  quiz_word_id: z.coerce.number().int().positive(),
-  selected_word_id: z.coerce.number().int().positive(),
-  rating: FSRSRatingSchema,
-});
-
-/**
- * POST /api/me/quiz/submit
- *
- * 判定作答正误并更新 FSRS 进度
- */
-export async function POST(request: NextRequest) {
+export async function POST(req: NextRequest) {
   try {
-    const { supabase, user } = await validateAuth(request);
+    const { supabase, user } = await validateAuth();
+    const body = await req.json();
+    const wordId = Number(body?.quiz_word_id ?? body?.word_id);
+    const rating = String(body?.rating || '').toLowerCase();
+    if (!wordId || !['again','hard','good','easy'].includes(rating)) {
+      throw createValidationError('无效的请求', '需要提供 quiz_word_id 与 rating');
+    }
 
-    const body = await request.json();
-    const { quiz_word_id, selected_word_id, rating } = SubmitSchema.parse(body);
-
-    const isCorrect = quiz_word_id === selected_word_id;
-
-    const updated = await updateWordProgressForUser({
+    const updated = await submitQuizAnswerAndUpdateProgress({
       supabase,
       userId: user.id,
-      wordId: quiz_word_id,
-      data: { rating },
+      wordId,
+      userRating: rating as any,
     });
 
-    return NextResponse.json({
-      is_correct: isCorrect,
-      updated_progress: updated,
-    }, { status: 200 });
-  } catch (error) {
-    return handleApiError(error);
+    return NextResponse.json({ updated_progress: updated }, { status: 200 });
+  } catch (e) {
+    return handleApiError(e);
   }
 }
 

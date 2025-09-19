@@ -34,7 +34,6 @@ export interface ReviewFlowStageProps {
 export function ReviewFlowStage(props: ReviewFlowStageProps) {
   const { wordId, word, phonetic, definitions, tags, promptText = word, options = [], correctOption, mnemonicHint, onNextWord } = props;
   const [mode, setMode] = useState<ReviewStageMode>({ kind: 'idle' });
-  const [submitting, setSubmitting] = useState(false);
   const { session } = useAuth();
 
   const [promptLoading, setPromptLoading] = useState(false);
@@ -50,32 +49,26 @@ export function ReviewFlowStage(props: ReviewFlowStageProps) {
     }
   }, [mode.kind]);
 
-  async function submitRating(rating: FSRSRating) {
+  function submitQuiz(rating: FSRSRating) {
     if (!session?.access_token) return;
-    setSubmitting(true);
-    try {
-      await fetch(`/api/me/review/progress/${wordId}`, {
-        method: 'PATCH',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${session.access_token}`,
-        },
-        body: JSON.stringify({ rating }),
-      });
-    } finally {
-      setSubmitting(false);
-    }
+    fetch('/api/me/quiz/submit', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${session.access_token}`,
+      },
+      body: JSON.stringify({ quiz_word_id: wordId, rating }),
+    }).catch(() => {});
   }
 
   function handleRate(rating: FSRSRating) {
-    // 先切界面，再后台提交，避免交互卡顿
+    // 先切界面 / 下一词，再后台提交
     if (rating === 'easy' || rating === 'good') {
       onNextWord?.();
     } else {
       setMode({ kind: 'review_stage' });
     }
-    // 后台提交
-    void submitRating(rating);
+    submitQuiz(rating);
   }
 
   function handlePathSelect(sel: PathSelection) {
@@ -84,20 +77,18 @@ export function ReviewFlowStage(props: ReviewFlowStageProps) {
   }
 
   function handleTestComplete(result: ChoiceResult) {
-    // 先切界面/下一词，再后台提交
     if (result === 'first_try') {
+      submitQuiz('good');
       onNextWord?.();
-      void submitRating('good');
       return;
     }
-    // 其他进入完整答案
+    const rating: FSRSRating = result === 'second_try' ? 'hard' : 'again';
     setMode({ kind: 'review_stage' });
-    void submitRating(result === 'second_try' ? 'hard' : 'again');
+    submitQuiz(rating);
   }
 
   const t = { duration: 0.1 } as const;
 
-  // review_stage 独占整页，直接复用 MnemonicLearningStage（其内部已有数据与动画）
   if (mode.kind === 'review_stage') {
     return (
       <div className="w-full">
@@ -143,7 +134,7 @@ export function ReviewFlowStage(props: ReviewFlowStageProps) {
             )}
             {mode.kind === 'self_assess' && (
               <div className="min-h-[460px] w-full flex items-center justify-center">
-                <FsrsRatingPanel onRate={handleRate} pending={submitting} />
+                <FsrsRatingPanel onRate={handleRate} />
               </div>
             )}
             {mode.kind === 'test' && (
