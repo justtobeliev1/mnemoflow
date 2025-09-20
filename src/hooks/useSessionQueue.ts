@@ -173,67 +173,85 @@ export function useSessionQueue(mode: SessionMode, opts: UseSessionQueueOptions 
 
     // --- Learning Mode State Machine ---
     if (mode === 'learn') {
-      // Phase 1 & 2: Testing words from T queue
-      if (learningStage === 'testing') {
-        const testedWord = tQueueRef.current.shift();
-        if (testedWord && (rating === 'hard' || rating === 'again')) {
-          pQueueRef.current.push(testedWord);
+      // Perform action based on the *current* stage
+      switch (learningStage) {
+        case 'encoding': {
+          const encodedWord = lQueueRef.current.shift();
+          if (encodedWord) {
+            tQueueRef.current.push(encodedWord);
+            lastEncodedRef.current = encodedWord;
+          }
+          break;
         }
-      }
-      // Phase 1: Encoding a new word from L queue
-      if (learningStage === 'encoding') {
-        const encodedWord = lQueueRef.current.shift();
-        if (encodedWord) {
-          tQueueRef.current.push(encodedWord);
-          lastEncodedRef.current = encodedWord;
+        case 'testing': {
+          const testedWord = tQueueRef.current.shift();
+          if (testedWord && (rating === 'hard' || rating === 'again')) {
+            if (!pQueueRef.current.find(p => p.id === testedWord.id)) {
+              pQueueRef.current.push(testedWord);
+            }
+          }
+          break;
         }
+        case 'consolidation_encoding':
+          lQueueRef.current.shift(); // Remove the word we just re-encoded
+          break;
+        case 'consolidation_testing':
+          pQueueRef.current.shift(); // Remove the word we just re-tested
+          break;
       }
-      // Phase 3: Re-encoding problem words from P queue
-      if (learningStage === 'consolidation_encoding') {
-        lQueueRef.current.shift(); // Consume the word from the temporary queue
-      }
-      // Phase 3: Re-testing problem words from P queue
-      if (learningStage === 'consolidation_testing') {
-        const testedWord = pQueueRef.current.shift();
-        // Final rating, no longer adding to P queue
-      }
-
-      // Determine the next step after the action
       _determineNextStep();
     }
   }
 
   // Helper to decide the next current item and learning stage
   function _determineNextStep() {
-    // Phase 1: Main learning loop
-    if (lQueueRef.current.length > 0) {
+    // 1. Main learning loop (L queue has words)
+    if (lQueueRef.current.length > 0 && learningStage !== 'consolidation_encoding') {
       const nextTestWord = tQueueRef.current[0];
       if (nextTestWord && nextTestWord.id !== lastEncodedRef.current?.id) {
         setLearningStage('testing');
-        setQueueState([nextTestWord]); // Current is the word to be tested
+        setQueueState([nextTestWord]);
       } else {
         setLearningStage('encoding');
-        setQueueState([lQueueRef.current[0]]); // Current is the word to be encoded
+        setQueueState([lQueueRef.current[0]]);
       }
       return;
     }
 
-    // Phase 2: Wrap-up testing
+    // 2. Wrap-up testing (L is empty, but T is not)
     if (tQueueRef.current.length > 0) {
       setLearningStage('testing');
       setQueueState([tQueueRef.current[0]]);
       return;
     }
 
-    // Phase 3: Consolidation
-    if (pQueueRef.current.length > 0) {
+    // 3. Consolidation phase
+    // 3a. Start of consolidation (P has words, and we are not already in consolidation)
+    if (pQueueRef.current.length > 0 && !['consolidation_encoding', 'consolidation_testing', 'break'].includes(learningStage)) {
       setLearningStage('break');
       setConsolidationTip('reencode');
-      // The actual consolidation will start after the break
+      setQueueState([]);
       return;
     }
+    // 3b. Continue re-encoding (temp L queue has words)
+    if (learningStage === 'consolidation_encoding' && lQueueRef.current.length > 0) {
+      setQueueState([lQueueRef.current[0]]);
+      return; // Stage remains the same
+    }
+    // 3c. Transition from re-encoding to re-testing
+    if (learningStage === 'consolidation_encoding' && lQueueRef.current.length === 0) {
+      setLearningStage('break');
+      setConsolidationTip('retest');
+      setQueueState([]);
+      return;
+    }
+    // 3d. Continue re-testing (P queue has words)
+    if (learningStage === 'consolidation_testing' && pQueueRef.current.length > 0) {
+      setQueueState([pQueueRef.current[0]]);
+      return; // Stage remains the same
+    }
 
-    // Phase 4: Summary
+    // 4. All queues are empty. End of session.
     setLearningStage('summary');
     setQueueState([]);
   }
@@ -242,10 +260,10 @@ export function useSessionQueue(mode: SessionMode, opts: UseSessionQueueOptions 
     if (phase === 'encoding') {
       setLearningStage('consolidation_encoding');
       lQueueRef.current = [...pQueueRef.current]; // Use L queue temporarily for re-encoding
-      setQueueState([lQueueRef.current[0]]);
+      setQueueState(lQueueRef.current.length > 0 ? [lQueueRef.current[0]] : []);
     } else { // testing
       setLearningStage('consolidation_testing');
-      setQueueState([pQueueRef.current[0]]);
+      setQueueState(pQueueRef.current.length > 0 ? [pQueueRef.current[0]] : []);
     }
   }
 
@@ -332,11 +350,20 @@ export function useSessionQueue(mode: SessionMode, opts: UseSessionQueueOptions 
 
   function continueFromBreak() {
     setConsolidationTip(null);
-    if (pQueueRef.current.length > 0) {
-      if (consolidationTip === 'reencode') {
-        _startConsolidation('encoding');
-      } else if (consolidationTip === 'retest') {
-        _startConsolidation('testing');
+    if (consolidationTip === 'reencode') {
+      lQueueRef.current = [...pQueueRef.current];
+      setLearningStage('consolidation_encoding');
+      if (lQueueRef.current.length > 0) {
+        setQueueState([lQueueRef.current[0]]);
+      } else {
+        _determineNextStep();
+      }
+    } else if (consolidationTip === 'retest') {
+      setLearningStage('consolidation_testing');
+      if (pQueueRef.current.length > 0) {
+        setQueueState([pQueueRef.current[0]]);
+      } else {
+        _determineNextStep();
       }
     }
   }

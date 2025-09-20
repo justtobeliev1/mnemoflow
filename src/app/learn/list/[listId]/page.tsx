@@ -93,6 +93,7 @@ export default function LearnListPage({ params }: { params: { listId: string } }
               per="char"
               preset="fade"
               delay={0.2}
+              trigger={!!showConsolidationTip}
               className="text-3xl font-bold"
               onAnimationComplete={() => setTimeout(S.continueFromBreak, 1200)}
             >
