@@ -90,7 +90,12 @@ function WordListDetailInner() {
         ) : (
           <ul className="divide-y divide-border/60 rounded-lg overflow-hidden glass-surface">
             {items.map((it) => (
-              <li key={it.word_id} className="px-4 py-3">
+              <li
+                key={it.word_id}
+                className="px-4 py-3 cursor-pointer hover:bg-surface/40"
+                onClick={() => router.push(`/word-lists/${listId}/mnemonics/${encodeURIComponent(it.words.word)}`)}
+                title="查看助记卡片"
+              >
                 <div className="flex items-center justify-between">
                   <div className="flex items-center gap-3">
                     <span className="text-foreground font-medium text-lg">{it.words.word}</span>
@@ -100,7 +105,7 @@ function WordListDetailInner() {
                     <PronunciationButton word={it.words.word} className="ml-1" />
                   </div>
                   <button
-                    onClick={() => removeWord(it.word_id)}
+                    onClick={(e) => { e.stopPropagation(); removeWord(it.word_id); }}
                     disabled={busy === it.word_id}
                     className="p-2 rounded-lg hover:bg-red-500/20 text-red-300"
                     title="移除"
