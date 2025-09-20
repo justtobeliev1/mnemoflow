@@ -153,15 +153,22 @@ export async function collectWordForUser({
   }
 
   // 5. 创建学习进度记录
+  const now = new Date().toISOString();
   const { data: newProgress, error: progressError } = await (supabase as any)
     .from('user_word_progress')
     .insert({
       user_id: userId,
       word_id: data.word_id,
       word_list_id: targetListId,
-      due: new Date().toISOString(), // 新词立即可学习
+      due: now,
+      stability: 0, // FSRS recommended initial value for new cards
+      difficulty: 0, // FSRS recommended initial value for new cards
       lapses: 0,
-      state: 0, // FSRS初始状态
+      state: 0, // State.New
+      last_review: null,
+      reps: 0,
+      scheduled_days: 0,
+      created_at: now,
     })
     .select()
     .single();

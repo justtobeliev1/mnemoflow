@@ -15,6 +15,7 @@ import { LogoutConfirmModal } from "@/components/ui/logout-confirm-modal";
 import { CreateWordListModal } from "@/components/ui/create-wordlist-modal";
 import { motion } from "framer-motion";
 import { useDueReviews } from "@/hooks/useDueReviews";
+import { useWordListsWithStats } from "@/hooks/useWordListsWithStats";
 
 function HomePageContent() {
   const { user, signOut } = useAuth();
@@ -23,6 +24,7 @@ function HomePageContent() {
   const [isLoggingOut, setIsLoggingOut] = useState(false);
   const { success, error } = useToast();
   const { data: dueData, isLoading: dueLoading } = useDueReviews(100);
+  const { data: statsData, isLoading: statsLoading } = useWordListsWithStats();
 
   const handleSearch = (query: string) => {
     const trimmedQuery = query.trim();
@@ -34,8 +36,7 @@ function HomePageContent() {
   };
 
   const handleLearnClick = () => {
-    console.log("开始学习");
-    // TODO: 导航到学习页面
+    router.push('/learn/select');
   };
 
   const handleReviewClick = () => {
@@ -81,7 +82,7 @@ function HomePageContent() {
   // FSRS算法模拟数据
   const fsrsData = {
     dueForReview: dueLoading ? null : ((dueData?.reviews?.length ?? 0) as number | null),
-    newToLearn: 28,
+    newToLearn: statsLoading ? null : (statsData?.reduce((sum, list) => sum + list.new_words, 0) ?? 0),
     totalLearned: 243,
   };
 
@@ -202,7 +203,7 @@ function HomePageContent() {
           <div className="text-center">
             <h3 className="text-sm text-muted mb-3">新词学习</h3>
             <div className="flex items-baseline justify-center gap-2 mb-2">
-              <span className="text-4xl font-bold text-foreground">{fsrsData.newToLearn}</span>
+              <span className="text-4xl font-bold text-foreground">{fsrsData.newToLearn ?? '—'}</span>
               <span className="text-sm text-muted">词</span>
             </div>
             <p className="text-xs text-muted">待首次学习</p>

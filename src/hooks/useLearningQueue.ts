@@ -18,6 +18,7 @@ export function useLearningQueue(listId?: number, batchSize: number = 20) {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [index, setIndex] = useState(0);
+  const [meta, setMeta] = useState({ has_learned_all: false });
 
   useEffect(() => {
     let mounted = true;
@@ -43,6 +44,7 @@ export function useLearningQueue(listId?: number, batchSize: number = 20) {
           return ax - bx;
         });
         setWords(sorted);
+        setMeta(body?.meta || { has_learned_all: false });
         setIndex(0);
       } catch (e: any) {
         if (mounted) setError(e?.message || '网络错误');
@@ -66,5 +68,5 @@ export function useLearningQueue(listId?: number, batchSize: number = 20) {
   const atBatchEnd = inBatchIndex === batch.length - 1 || batch.length === 0;
   const hasMore = index + 1 < words.length;
 
-  return { words, current, index, batch, inBatchIndex, batchStart, batchEnd, atBatchEnd, hasMore, next, prev, reset, loading, error };
+  return { words, current, index, batch, inBatchIndex, batchStart, batchEnd, atBatchEnd, hasMore, next, prev, reset, loading, error, hasLearnedAll: meta.has_learned_all };
 }

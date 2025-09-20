@@ -1,19 +1,21 @@
 import { SupabaseClient } from '@supabase/supabase-js';
-import { ReviewProgressUpdate, FSRSRating } from '@/lib/validators/review.schemas';
-import { createNotFoundError, AppError } from '@/lib/errors';
+import { Database } from '@/lib/database.types';
+import { AppError, createNotFoundError } from '@/lib/errors';
+import { FSRSRating, FSRSRatingSchema } from '@/lib/validators/review.schemas';
+import { fsrs, Card, State, Rating } from 'ts-fsrs';
 
 /**
  * Review Service - 函数式实现
  * 管理复习队列和学习进度相关操作
  */
 
-type SupabaseClientType = SupabaseClient<any>;
+type SupabaseAdminClient = SupabaseClient<Database, 'public'>;
 
 /**
  * 基础参数类型
  */
 type BaseArgs = {
-  supabase: SupabaseClientType;
+  supabase: SupabaseAdminClient;
   userId: string;
 };
 
@@ -191,7 +193,7 @@ export async function updateWordProgressForUser({
   userId,
   wordId,
   data,
-}: BaseArgs & { wordId: number; data: ReviewProgressUpdate }) {
+}: BaseArgs & { wordId: number; data: FSRSRating }) {
   // 1. 获取当前学习进度
   const { data: currentProgress, error: fetchError } = await supabase
     .from('user_word_progress')
@@ -212,13 +214,13 @@ export async function updateWordProgressForUser({
   const fsrsResult = calculateNextReview(
     currentStability,
     currentDifficulty,
-    data.rating,
+    data,
     currentLapses
   );
 
   // 3. 准备更新数据
   const reviewTime = data.review_time || new Date().toISOString();
-  const newLapses = data.rating === 'again' ? currentLapses + 1 : currentLapses;
+  const newLapses = data === 'again' ? currentLapses + 1 : currentLapses;
 
   const updateData = {
     stability: fsrsResult.newStability,
@@ -245,9 +247,6 @@ export async function updateWordProgressForUser({
   return updatedProgress;
 }
 
-// --- New: Server-side FSRS computation using ts-fsrs ---
-import { fsrs as createFsrs, Rating as FsrsRatingEnum, State as FsrsState, Card as FsrsCard } from 'ts-fsrs';
-
 export async function submitQuizAnswerAndUpdateProgress({
   supabase,
   userId,
@@ -272,56 +271,53 @@ export async function submitQuizAnswerAndUpdateProgress({
   const due: Date = progress.due ? new Date(progress.due) : now;
 
   const dbState: number = progress.state ?? 0;
-  const stateMap: Record<number, FsrsState> = {
-    0: FsrsState.New,
-    1: FsrsState.Learning,
-    2: FsrsState.Review,
-    3: FsrsState.Relearning,
-  } as any;
 
-  const card: Partial<FsrsCard> = {
-    due,
-    stability: progress.stability ?? undefined,
-    difficulty: progress.difficulty ?? undefined,
+  const card: Card = {
+    due: new Date(progress.due),
+    stability: progress.stability ?? 0,
+    difficulty: progress.difficulty ?? 0,
     lapses: progress.lapses ?? 0,
-    state: stateMap[dbState] ?? FsrsState.New,
-    last_review: lastReview,
+    state: progress.state as State,
+    last_review: progress.last_review ? new Date(progress.last_review) : undefined,
     reps: progress.reps ?? 0,
     scheduled_days: progress.scheduled_days ?? 0,
   };
 
-  // 3) 用户评级 -> FSRS Rating
-  const ratingMap: Record<string, FsrsRatingEnum> = {
-    again: FsrsRatingEnum.Again,
-    hard: FsrsRatingEnum.Hard,
-    good: FsrsRatingEnum.Good,
-    easy: FsrsRatingEnum.Easy,
+  // 2. Initialize FSRS with custom parameters for better UX
+  const f = fsrs({
+    learning_steps: ["1d"], // First review after 1 day
+  });
+  
+  // 3. Map user rating string to FSRS Rating enum
+  const ur = FSRSRatingSchema.parse(userRating);
+  const ratingEnumMap: Record<'again'|'hard'|'good'|'easy', Rating> = {
+    again: Rating.Again,
+    hard: Rating.Hard,
+    good: Rating.Good,
+    easy: Rating.Easy,
   };
-  const ratingEnum = ratingMap[userRating];
+  const chosenEnum = ratingEnumMap[ur];
+  const resultAny: any = f.repeat(card, now);
+  const nextCard: any = resultAny[chosenEnum]?.card ?? card;
 
-  const f = createFsrs();
-  // 使用 repeat 并挑选用户评级对应的结果（保持与题述一致）
-  const result = f.repeat(card as FsrsCard, now);
-  const next = (result as any)[ratingEnum].card as FsrsCard;
-
-  // 4) FSRS Card -> 数据库
+  // 5) FSRS Card -> 数据库
   const updateData = {
-    due: next.due ? new Date(next.due as any).toISOString() : new Date().toISOString(),
-    stability: next.stability ?? null,
-    difficulty: next.difficulty ?? null,
-    lapses: typeof next.lapses === 'number' ? next.lapses : progress.lapses ?? 0,
+    due: nextCard?.due ? new Date(nextCard.due as any).toISOString() : new Date(now.getTime() + 24*60*60*1000).toISOString(),
+    stability: nextCard?.stability ?? null,
+    difficulty: nextCard?.difficulty ?? null,
+    lapses: typeof nextCard?.lapses === 'number' ? nextCard.lapses : progress.lapses ?? 0,
     state: ((): number => {
       const reverse: Record<number, number> = {
-        [FsrsState.New]: 0,
-        [FsrsState.Learning]: 1,
-        [FsrsState.Review]: 2,
-        [FsrsState.Relearning]: 3,
+        [State.New]: 0,
+        [State.Learning]: 1,
+        [State.Review]: 2,
+        [State.Relearning]: 3,
       } as any;
-      return reverse[next.state as any] ?? progress.state ?? 0;
+      return reverse[nextCard?.state as any] ?? progress.state ?? 0;
     })(),
     last_review: now.toISOString(),
-    reps: typeof next.reps === 'number' ? next.reps : (progress.reps ?? 0) + 1,
-    scheduled_days: typeof next.scheduled_days === 'number' ? next.scheduled_days : progress.scheduled_days ?? 0,
+    reps: typeof nextCard?.reps === 'number' ? nextCard.reps : (progress.reps ?? 0) + 1,
+    scheduled_days: typeof nextCard?.scheduled_days === 'number' ? nextCard.scheduled_days : progress.scheduled_days ?? 0,
   };
 
   // 5) 更新数据库

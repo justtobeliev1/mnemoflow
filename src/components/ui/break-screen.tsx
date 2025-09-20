@@ -16,7 +16,7 @@ export interface BreakScreenProps {
 export function BreakScreen({ title='会话完成', description, primaryLabel='继续', secondaryLabel='退出', onContinue, onExit, fullScreen=false, minimal=false }: BreakScreenProps) {
   const core = (
     <div className="flex flex-col items-center justify-center gap-4">
-      {title && <h2 className="text-3xl font-extrabold bg-gradient-to-r from-gradient-indigo via-gradient-white to-gradient-rose bg-clip-text text-transparent text-center">{title}</h2>}
+      {title && <h2 className="text-3xl font-extrabold bg-gradient-to-r from-indigo-200 via-slate-300 to-rose-200 bg-clip-text text-transparent text-center">{title}</h2>}
       {description && <p className="text-muted whitespace-pre-line text-center max-w-2xl">{description}</p>}
       <div className="flex items-center justify-center gap-3 mt-2">
         {onContinue && <button className="px-4 py-2 rounded-md bg-primary text-primary-foreground" onClick={onContinue}>{primaryLabel}</button>}
@@ -43,8 +43,8 @@ export function BreakScreen({ title='会话完成', description, primaryLabel='�
 
   if (fullScreen) {
     return (
-      <div className="fixed inset-0 z-40">
-        {card}
+      <div className="fixed inset-0 z-40 flex items-center justify-center">
+        {minimal ? core : card}
       </div>
     );
   }

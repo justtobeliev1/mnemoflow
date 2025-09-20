@@ -84,6 +84,25 @@
 - **响应**: `200 OK` 返回匹配对象；`404 Not Found` 未找到。
 - **实现文件**: `src/app/api/me/word-lists/by-name/[name]/route.ts`
 
+#### 13. 获取带学习统计的单词本列表（NEW）
+- **端点**: `GET /api/me/word-lists/with-stats`
+- **功能**: 调用数据库函数 `get_word_lists_with_stats`，返回所有**包含未学习新词**的单词本及其学习进度统计。
+- **认证**: 必须
+- **响应**:
+```json
+  [
+    {
+      "list_id": 1,
+      "list_name": "雅思核心词汇",
+      "total_words": 250,
+      "learned_words": 150,
+      "new_words": 100
+    }
+  ]
+```
+- **实现文件**: `src/app/api/me/word-lists/with-stats/route.ts`
+- **数据库函数**: `public.get_word_lists_with_stats(p_user_id uuid)`
+
 ### 📝 词汇管理
 
 #### 12. 收录单词

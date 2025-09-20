@@ -27,7 +27,7 @@ export function useDueReviews(limit: number = 100) {
       if (!res.ok) throw new Error(await res.text());
       return res.json();
     },
-    staleTime: 30_000,
+    enabled: !!session?.access_token,
   });
 }
 

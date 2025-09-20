@@ -118,7 +118,7 @@ export function useSessionQueue(mode: SessionMode, opts: UseSessionQueueOptions 
 
   const queue = queueState;
 
-  const current = queueState[0] || null;
+  const current = mode === 'review' ? (queueState[index] || null) : (queueState[0] || null);
 
   // hasMore logic updated for learning mode
   const hasMore = mode === 'review' 

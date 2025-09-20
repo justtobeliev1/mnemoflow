@@ -87,7 +87,7 @@ export function ReviewFlowStage(props: ReviewFlowStageProps) {
   function handleRate(rating: FSRSRating) {
     // 先切界面 / 下一词，再后台提交
     if (rating === 'easy' || rating === 'good') {
-      onNextWord?.();
+      onNextWord?.(rating);
     } else {
       setMode({ kind: 'review_stage' });
     }
@@ -153,8 +153,9 @@ export function ReviewFlowStage(props: ReviewFlowStageProps) {
               // 若为复习流程且当前单词被标记强制测试，则直接切换到测试视图，避免末尾仅剩 R 时无法再次强测
               if (flow === 'review' && forceTestForCurrent) {
                 setMode({ kind: 'test' });
+              } else {
+                onNextWord?.();
               }
-              onNextWord?.();
             }}
           />
         </div>
