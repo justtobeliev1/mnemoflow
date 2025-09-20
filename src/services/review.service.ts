@@ -171,12 +171,15 @@ export async function getReviewStatsForUser({
   }
 
   // 计算各种状态的单词数量
+  const totalArr = (totalStats || []) as Array<{ state: number }>;
+  const dueArr = (dueStats || []) as Array<{ id: number }>;
+
   const stats = {
-    total_words: totalStats?.length || 0,
-    new_words: totalStats?.filter(item => item.state === 0).length || 0,
-    learning_words: totalStats?.filter(item => item.state === 1).length || 0,
-    review_words: totalStats?.filter(item => item.state === 2).length || 0,
-    due_today: dueStats?.length || 0,
+    total_words: totalArr.length || 0,
+    new_words: totalArr.filter(item => item.state === 0).length || 0,
+    learning_words: totalArr.filter(item => item.state === 1).length || 0,
+    review_words: totalArr.filter(item => item.state === 2).length || 0,
+    due_today: dueArr.length || 0,
   };
 
   return stats;
@@ -207,9 +210,10 @@ export async function updateWordProgressForUser({
   }
 
   // 2. 计算新的FSRS参数
-  const currentStability = currentProgress.stability || FSRS_INITIAL_STABILITY;
-  const currentDifficulty = currentProgress.difficulty || FSRS_INITIAL_DIFFICULTY;
-  const currentLapses = currentProgress.lapses || 0;
+  const cp = currentProgress as any;
+  const currentStability = (cp?.stability as number | null) ?? FSRS_INITIAL_STABILITY;
+  const currentDifficulty = (cp?.difficulty as number | null) ?? FSRS_INITIAL_DIFFICULTY;
+  const currentLapses = (cp?.lapses as number | null) ?? 0;
 
   const fsrsResult = calculateNextReview(
     currentStability,
@@ -219,7 +223,7 @@ export async function updateWordProgressForUser({
   );
 
   // 3. 准备更新数据
-  const reviewTime = data.review_time || new Date().toISOString();
+  const reviewTime = (data as any).review_time || new Date().toISOString();
   const newLapses = data === 'again' ? currentLapses + 1 : currentLapses;
 
   const updateData = {
@@ -267,21 +271,31 @@ export async function submitQuizAnswerAndUpdateProgress({
 
   // 2) 数据库 -> FSRS Card 映射
   const now = new Date();
-  const lastReview: Date | undefined = progress.last_review ? new Date(progress.last_review) : undefined;
-  const due: Date = progress.due ? new Date(progress.due) : now;
+  const pg = progress as any;
+  const lastReview: Date | undefined = pg?.last_review ? new Date(pg.last_review) : undefined;
+  const due: Date = pg?.due ? new Date(pg.due) : now;
 
-  const dbState: number = progress.state ?? 0;
+  const dbState: number = (pg?.state as number | null) ?? 0;
 
   const card: Card = {
-    due: new Date(progress.due),
-    stability: progress.stability ?? 0,
-    difficulty: progress.difficulty ?? 0,
-    lapses: progress.lapses ?? 0,
-    state: progress.state as State,
-    last_review: progress.last_review ? new Date(progress.last_review) : undefined,
-    reps: progress.reps ?? 0,
-    scheduled_days: progress.scheduled_days ?? 0,
-  };
+    due: due,
+    stability: (pg?.stability as number | null) ?? 0,
+    difficulty: (pg?.difficulty as number | null) ?? 0,
+    lapses: (pg?.lapses as number | null) ?? 0,
+    state: ((): State => {
+      switch (dbState) {
+        case 1: return State.Learning;
+        case 2: return State.Review;
+        case 3: return State.Relearning;
+        default: return State.New;
+      }
+    })(),
+    last_review: lastReview,
+    reps: (pg?.reps as number | null) ?? 0,
+    scheduled_days: (pg?.scheduled_days as number | null) ?? 0,
+    elapsed_days: 0,
+    learning_steps: 0,
+  } as unknown as Card;
 
   // 2. Initialize FSRS with custom parameters for better UX
   const f = fsrs({
@@ -305,7 +319,7 @@ export async function submitQuizAnswerAndUpdateProgress({
     due: nextCard?.due ? new Date(nextCard.due as any).toISOString() : new Date(now.getTime() + 24*60*60*1000).toISOString(),
     stability: nextCard?.stability ?? null,
     difficulty: nextCard?.difficulty ?? null,
-    lapses: typeof nextCard?.lapses === 'number' ? nextCard.lapses : progress.lapses ?? 0,
+    lapses: typeof nextCard?.lapses === 'number' ? nextCard.lapses : ((pg?.lapses as number | null) ?? 0),
     state: ((): number => {
       const reverse: Record<number, number> = {
         [State.New]: 0,
@@ -313,11 +327,11 @@ export async function submitQuizAnswerAndUpdateProgress({
         [State.Review]: 2,
         [State.Relearning]: 3,
       } as any;
-      return reverse[nextCard?.state as any] ?? progress.state ?? 0;
+      return reverse[nextCard?.state as any] ?? (pg?.state as number | null) ?? 0;
     })(),
     last_review: now.toISOString(),
-    reps: typeof nextCard?.reps === 'number' ? nextCard.reps : (progress.reps ?? 0) + 1,
-    scheduled_days: typeof nextCard?.scheduled_days === 'number' ? nextCard.scheduled_days : progress.scheduled_days ?? 0,
+    reps: typeof nextCard?.reps === 'number' ? nextCard.reps : (((pg?.reps as number | null) ?? 0) + 1),
+    scheduled_days: typeof nextCard?.scheduled_days === 'number' ? nextCard.scheduled_days : ((pg?.scheduled_days as number | null) ?? 0),
   };
 
   // 5) 更新数据库

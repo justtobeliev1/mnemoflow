@@ -162,7 +162,7 @@ export function AIChatSidebar({ isOpen, onClose, word, wordId }: AIChatSidebarPr
 
       if (!response.body) throw new Error('No response body');
       
-      setMessages(prev => [...prev, { role: 'assistant', content: '' }]);
+      setMessages(prev => [...prev, { role: 'assistant' as const, content: '' }]);
 
       const reader = response.body.getReader();
       const decoder = new TextDecoder();
@@ -180,10 +180,9 @@ export function AIChatSidebar({ isOpen, onClose, word, wordId }: AIChatSidebarPr
           return [...prev.slice(0, -1), updatedLastMessage];
         });
       }
-      // 完成后保存历史
-      const updated: Message[] = [...newMessages, { role: 'assistant', content: finalAssistantMessage }];
+      // 完成后由 finally 统一保存
+      const updated: Message[] = [...newMessages, { role: 'assistant' as const, content: finalAssistantMessage }];
       setMessages(updated);
-      saveHistoryWithRetry(updated);
     } catch (e: any) {
       console.error('AI chat error:', e);
       // 展示错误气泡
@@ -196,7 +195,7 @@ export function AIChatSidebar({ isOpen, onClose, word, wordId }: AIChatSidebarPr
     } finally {
       setIsLoading(false);
       setIsStreaming(false);
-      const finalMessages = [...newMessages, { role: 'assistant', content: finalAssistantMessage }];
+      const finalMessages: Message[] = [...newMessages, { role: 'assistant' as const, content: finalAssistantMessage }];
       // 写本地 + 后台重试保存
       saveHistoryWithRetry(finalMessages);
     }

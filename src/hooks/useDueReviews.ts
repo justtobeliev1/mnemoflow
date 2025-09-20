@@ -18,7 +18,6 @@ export function useDueReviews(limit: number = 100) {
 
   return useQuery<{ reviews: DueReviewItem[] }, Error>({
     queryKey: ['due-reviews', limit, session?.access_token],
-    enabled,
     queryFn: async () => {
       const res = await fetch(`/api/me/reviews/due-list?limit=${limit}`, {
         headers: session?.access_token ? { Authorization: `Bearer ${session.access_token}` } : undefined,

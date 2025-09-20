@@ -57,10 +57,12 @@ export async function getChatHistoryForWord({
 }: BaseArgs & { wordId: number }) {
   const { data, error } = await supabase
     .from('word_chat_history')
-    .select('conversation_log')
+    .select('conversation_log, updated_at')
     .eq('user_id', userId)
     .eq('word_id', wordId)
-    .single();
+    .order('updated_at', { ascending: false })
+    .limit(1)
+    .maybeSingle();
 
   if (error && error.code !== 'PGRST116') { // PGRST116 = no rows found
     console.error('Get chat history error:', error);
@@ -95,7 +97,10 @@ export async function getChatSessions({
       word_id,
       updated_at,
       words (
-        word
+        id,
+        word,
+        definition,
+        phonetic
       )
     `)
     .eq('user_id', userId)
@@ -105,12 +110,43 @@ export async function getChatSessions({
     throw new AppError(`获取聊天会话失败: ${error.message}`, 500);
   }
 
-  // The type from Supabase might be different, so we map it to our ChatSession type
-  const sessions: ChatSession[] = (chatHistory as any[])?.map(item => ({
-    word_id: item.word_id,
-    word: item.words.word,
-    updated_at: item.updated_at,
-  })) || [];
+  // 方案A：对 chat_messages 做分组聚合，然后合并回 sessions
+  const wordIds: number[] = ((chatHistory as any[]) || []).map((s: any) => s.word_id);
+
+  let aggregatesByWordId = new Map<number, { message_count: number; last_message_at: string | null }>();
+  if (wordIds.length > 0) {
+    const { data: aggregates, error: aggError } = await (supabase as any)
+      .from('chat_messages')
+      .select('word_id, message_count:count(id), last_message_at:max(created_at)')
+      .eq('user_id', userId)
+      .in('word_id', wordIds)
+      .group('word_id');
+
+    if (!aggError && Array.isArray(aggregates)) {
+      aggregatesByWordId = new Map(
+        (aggregates as any[]).map((a: any) => [a.word_id as number, {
+          message_count: Number(a.message_count ?? 0),
+          last_message_at: a.last_message_at ?? null,
+        }])
+      );
+    }
+  }
+
+  // Map to ChatSession schema shape，并注入聚合结果
+  const sessions: ChatSession[] = (chatHistory as any[])?.map((item: any) => {
+    const agg = aggregatesByWordId.get(item.word_id);
+    return {
+      word_id: item.word_id,
+      word: {
+        id: item.words?.id,
+        word: item.words?.word,
+        definition: item.words?.definition ?? null,
+        phonetic: item.words?.phonetic ?? null,
+      },
+      message_count: agg?.message_count ?? 0,
+      last_message_at: agg?.last_message_at ?? item.updated_at ?? null,
+    };
+  }) || [];
 
   return sessions;
 }
@@ -217,19 +253,20 @@ export async function saveChatHistory({
   wordId,
   messages,
 }: BaseArgs & { wordId: number; messages: { role: 'user' | 'assistant', content: string }[] }) {
-  // 1) 先查是否存在
-  const { data: existing, error: findError } = await supabase
+  // 1) 先查是否存在（可能存在多条）
+  const { data: existingRows, error: findError } = await supabase
     .from('word_chat_history')
-    .select('id')
+    .select('id, updated_at')
     .eq('user_id', userId)
     .eq('word_id', wordId)
-    .maybeSingle();
+    .order('updated_at', { ascending: false });
 
   if (findError) {
     console.error('Find chat history error:', findError);
     throw new AppError('Failed to query chat history', 500);
   }
 
+  const existing = Array.isArray(existingRows) && existingRows.length > 0 ? existingRows[0] : null;
   if (existing?.id) {
     // 2) 存在则更新
     const { data: updated, error: updError } = await (supabase as any)
