@@ -63,7 +63,7 @@ export default function ReviewPage() {
             options={opt?.options ?? []}
             correctOption={opt?.correct ?? ''}
             mnemonicHint={S.mnemonicHint}
-            onNextWord={() => S.next()}
+            onNextWord={() => S.advance()}
             forceTestForCurrent={S.forceTestForCurrent}
             enqueueRelearn={(id) => S.enqueueRelearn(id)}
             clearForceTest={(id) => S.clearForceTest(id)}

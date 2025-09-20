@@ -30,15 +30,16 @@ export interface ReviewFlowStageProps {
   options?: string[];
   correctOption?: string;
   mnemonicHint?: string;
-  onNextWord?: () => void;
+  onNextWord?: (rating?: FSRSRating) => void;
   // 来自队列：可选的强制测试标志与 R/T 队操作
   forceTestForCurrent?: boolean;
   enqueueRelearn?: (wordId: number) => void;
   clearForceTest?: (wordId: number) => void;
+  alwaysAdvanceOnTest?: boolean; // 学习模式测试时使用，保证总能进入下一项
 }
 
 export function ReviewFlowStage(props: ReviewFlowStageProps) {
-  const { flow = 'review', wordId, word, phonetic, definitions, tags, promptText = word, options = [], correctOption, mnemonicHint, onNextWord, forceTestForCurrent, enqueueRelearn, clearForceTest } = props;
+  const { flow = 'review', wordId, word, phonetic, definitions, tags, promptText = word, options = [], correctOption, mnemonicHint, onNextWord, forceTestForCurrent, enqueueRelearn, clearForceTest, alwaysAdvanceOnTest } = props;
   const [mode, setMode] = useState<ReviewStageMode>({ kind: 'idle' });
   const { session } = useAuth();
   const optionsReady = Array.isArray(options) && options.length > 0 && !!correctOption;
@@ -105,18 +106,28 @@ export function ReviewFlowStage(props: ReviewFlowStageProps) {
   }
 
   function handleTestComplete(result: ChoiceResult) {
-    if (result === 'first_try') {
-      submitQuiz('good');
-      // 首次即正确：清除强测标志
-      clearForceTest?.(wordId);
-      onNextWord?.();
+    const ratingMap: Record<ChoiceResult, FSRSRating> = {
+      first_try: 'good',
+      second_try: 'hard',
+      failed: 'again',
+    };
+    const rating = ratingMap[result];
+    submitQuiz(rating);
+
+    if (alwaysAdvanceOnTest) {
+      if (result === 'first_try') clearForceTest?.(wordId);
+      onNextWord?.(rating);
       return;
     }
-    const rating: FSRSRating = result === 'second_try' ? 'hard' : 'again';
-    setMode({ kind: 'review_stage' });
-    submitQuiz(rating);
-     enqueueRelearn?.(wordId);
-     // 只有首次答对（first_try）才清除强制标记；否则保持强制测试
+
+    // Default review flow logic
+    if (result === 'first_try') {
+      clearForceTest?.(wordId);
+      onNextWord?.(rating);
+    } else {
+      setMode({ kind: 'review_stage' });
+      enqueueRelearn?.(wordId);
+    }
   }
 
   const t = { duration: 0.25, ease: 'easeInOut' } as const;
