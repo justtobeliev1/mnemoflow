@@ -153,7 +153,11 @@
   }
   
   .text-gradient {
-    @apply bg-gradient-to-r from-indigo-300 via-white/90 to-rose-300 bg-clip-text text-transparent;
+    /* 使用指定主题色：#A5B4FC → #FFFFFF → #FDA4AF，整词水平渐变 */
+    background: linear-gradient(90deg, #A5B4FC 0%, #FFFFFF 50%, #FDA4AF 100%);
+    -webkit-background-clip: text;
+    background-clip: text;
+    color: transparent;
   }
   
   .line-clamp-2 {

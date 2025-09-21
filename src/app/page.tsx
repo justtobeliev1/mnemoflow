@@ -16,6 +16,7 @@ import { CreateWordListModal } from "@/components/ui/create-wordlist-modal";
 import { motion } from "framer-motion";
 import { useDueReviews } from "@/hooks/useDueReviews";
 import { useWordListsWithStats } from "@/hooks/useWordListsWithStats";
+import { FlipWords } from "@/components/ui/flip-words";
 
 function HomePageContent() {
   const { user, signOut } = useAuth();
@@ -140,11 +141,13 @@ function HomePageContent() {
           transition={{ duration: 0.8, delay: 0.2 }}
           className="text-center mb-12"
         >
-          <h1 className="text-4xl font-bold mb-4">
-            <span className="text-foreground">欢迎回来，</span>
-            <span className="text-gradient">{user?.email?.split('@')[0]}</span>
-          </h1>
-          <p className="text-muted text-lg">您的智能英语学习助手</p>
+          <div className="text-4xl font-bold mb-4">
+            <span className="text-foreground">Memorize with</span>
+            <span className="text-gradient">
+              <FlipWords words={["Connection", "Comprehension", "Creation"]} duration={2000} />
+            </span>
+          </div>
+          <p className="text-muted text-lg">让每一次记忆，都是一场复利之旅</p>
         </motion.div>
 
         {/* 搜索区域 */}
