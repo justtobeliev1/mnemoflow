@@ -56,6 +56,7 @@ export async function getMnemonicForWord({
       )
     `)
     .eq('word_id', wordId)
+    .order('is_official', { ascending: false }) 
     .order('version', { ascending: false })
     .limit(1)
     .single();
@@ -196,23 +197,38 @@ export async function regenerateMnemonicForWord({
     throw createNotFoundError('单词');
   }
 
-  // 3. 新建一个版本（version + 1），状态为生成中
-  const nextVersion = (existingMnemonic?.version || 1) + 1;
-  const { data: newRow, error: insertErr } = await (supabase as any)
-    .from('word_mnemonics')
-    .insert({
-      word_id: wordId,
-      content: { status: 'generating' },
-      version: nextVersion,
-      created_by: userId,
-    })
-    .select('*')
-    .single();
+  let targetMnemonicId: number;
 
-  if (insertErr || !newRow) {
-    throw new AppError(`创建新版本失败: ${insertErr?.message || 'unknown'}`, 500);
+  if (existingMnemonic.is_official) {
+    // 场景A: 正在重新生成官方助记词 -> 直接锁定这条记录的ID进行更新
+    targetMnemonicId = existingMnemonic.id;
+    
+    // 立即将内容状态设为“生成中”，提供即时反馈
+    await supabase
+      .from('word_mnemonics')
+      .update({ content: { status: 'generating' } })
+      .eq('id', targetMnemonicId);
+
+  } else {
+    // 场景B: 正在重新生成用户助记词 -> 创建一个新版本
+    const nextVersion = (existingMnemonic?.version || 1) + 1;
+    const { data: newRow, error: insertErr } = await (supabase as any)
+      .from('word_mnemonics')
+      .insert({
+        word_id: wordId,
+        content: { status: 'generating' },
+        version: nextVersion,
+        created_by: userId,
+        is_official: false, // 明确指定为非官方
+      })
+      .select('id')
+      .single();
+
+    if (insertErr || !newRow) {
+      throw new AppError(`创建新版本失败: ${insertErr?.message || 'unknown'}`, 500);
+    }
+    targetMnemonicId = newRow.id;
   }
-
   // 4. 异步重新生成内容
   Promise.resolve().then(async () => {
     try {
@@ -237,14 +253,14 @@ export async function regenerateMnemonicForWord({
       await (supabase as any)
         .from('word_mnemonics')
         .update({ content: contentJson })
-        .eq('id', newRow.id);
+        .eq('id', targetMnemonicId);
         
     } catch (error) {
       // 失败不再打印冗长日志，仅存入表中
       await (supabase as any)
         .from('word_mnemonics')
         .update({ content: { error: String(error) } })
-        .eq('id', newRow.id);
+        .eq('id', targetMnemonicId);
     }
   });
 
