@@ -10,8 +10,8 @@ import { SpeedInsights } from "@vercel/speed-insights/next"; // <--- 1. 在这�
 const AnimatedBackground = dynamic(() => import('@/components/ui/animated-background').then(m => m.AnimatedBackground), { ssr: false });
 
 export const metadata: Metadata = {
-  title: "Mnemoflow - 智能英语学习助手",
-  description: "基于认知科学理论的智能化英语词汇学习应用",
+  title: "Mnemoflow - 革新词汇学习体验",
+  description: "基于认知科学理论的智能化英语词汇学习应用，告别死记硬背，将枯燥的词汇学习转变为高效而充满乐趣的流动体验。",
 };
 
 export default function RootLayout({
