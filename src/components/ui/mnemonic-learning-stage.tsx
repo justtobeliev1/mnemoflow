@@ -37,35 +37,90 @@ function calculateGap(width: number) {
 export function MnemonicLearningStage(props: MnemonicLearningStageProps) {
   const { word, phonetic, definitions, tags = [], senses, blueprint, scenario, example, wordId } = props;
 
-  // ---- Fallback: fetch dictionary defs if empty ----
+  // ---- Fallback: fetch all word data (definitions, phonetic, tags) if needed ----
   const [defs, setDefs] = useState<DefinitionItem[]>(definitions);
+  const [phon, setPhon] = useState(phonetic);
+  const [wordTags, setWordTags] = useState<string[]>(tags);
+
+  const { session } = useAuth();
 
   useEffect(() => {
-    if (definitions.length > 0) { setDefs(definitions); return; }
-
-    const LS_KEY = `def-cache:${word}`;
-    const cached = (() => {
-      try { return JSON.parse(localStorage.getItem(LS_KEY) || 'null'); } catch { return null; }
-    })();
-    if (cached && Array.isArray(cached.items) && Date.now() - cached.ts < 7*24*60*60*1000) {
-      setDefs(cached.items);
+    // 如果都有数据，不需要获取
+    if (definitions.length > 0 && phonetic && tags.length > 0) {
+      setDefs(definitions);
+      setPhon(phonetic);
+      setWordTags(tags);
       return;
     }
 
-    fetch(`/api/words/search/${encodeURIComponent(word)}`, {
-      headers: session?.access_token ? { 'Authorization': `Bearer ${session.access_token}` } : undefined,
-    })
-      .then(r => r.ok ? r.json() : null)
-      .then(body => {
-        const def = body?.word?.definition ?? null;
-        const items = def ? parseDefinition(def) : [];
-        if (items.length) {
-          setDefs(items as any);
-          try { localStorage.setItem(LS_KEY, JSON.stringify({ ts: Date.now(), items })); } catch {}
-        }
+    // 检查统一缓存
+    const LS_KEY = `word-data-cache:${word}`;
+    const cached = (() => {
+      try { return JSON.parse(localStorage.getItem(LS_KEY) || 'null'); } catch { return null; }
+    })();
+
+    if (cached && Date.now() - cached.ts < 7*24*60*60*1000) {
+      // 只有当数据确实为空时才使用缓存
+      if (definitions.length === 0 && cached.definitions) {
+        setDefs(cached.definitions);
+      }
+      if (!phonetic && cached.phonetic) {
+        setPhon(cached.phonetic);
+      }
+      if (tags.length === 0 && cached.tags) {
+        setWordTags(cached.tags);
+      }
+      return;
+    }
+
+    // 需要从API获取数据
+    const needsDefinitions = definitions.length === 0;
+    const needsPhonetic = !phonetic;
+    const needsTags = tags.length === 0;
+
+    if (needsDefinitions || needsPhonetic || needsTags) {
+      fetch(`/api/words/search/${encodeURIComponent(word)}`, {
+        headers: session?.access_token ? { 'Authorization': `Bearer ${session.access_token}` } : undefined,
       })
-      .catch(() => {});
-  }, [word, definitions]);
+        .then(r => r.ok ? r.json() : null)
+        .then(body => {
+          const wordData = body?.word ?? {};
+          let shouldCache = false;
+          const cacheData: any = { ts: Date.now() };
+
+          // 处理释义数据
+          if (needsDefinitions && wordData.definition) {
+            const items = parseDefinition(wordData.definition);
+            if (items.length) {
+              setDefs(items);
+              cacheData.definitions = items;
+              shouldCache = true;
+            }
+          }
+
+          // 处理音标数据
+          if (needsPhonetic && wordData.phonetic) {
+            setPhon(wordData.phonetic);
+            cacheData.phonetic = wordData.phonetic;
+            shouldCache = true;
+          }
+
+          // 处理标签数据
+          if (needsTags && wordData.tags) {
+            const parsedTags = Array.isArray(wordData.tags) ? wordData.tags : [];
+            setWordTags(parsedTags);
+            cacheData.tags = parsedTags;
+            shouldCache = true;
+          }
+
+          // 统一缓存
+          if (shouldCache) {
+            try { localStorage.setItem(LS_KEY, JSON.stringify(cacheData)); } catch {}
+          }
+        })
+        .catch(() => {});
+    }
+  }, [word, definitions, phonetic, tags, session?.access_token]);
 
   const [containerWidth, setContainerWidth] = useState(1200);
   const [isChatOpen, setChatOpen] = useState(false);
@@ -75,7 +130,6 @@ export function MnemonicLearningStage(props: MnemonicLearningStageProps) {
 
   const imageContainerRef = useRef<HTMLDivElement>(null);
   const { data: mnemonicData, isLoading: mnemonicLoading, error: mnemonicError, regenerate, meta } = useMnemonic(wordId);
-  const { session } = useAuth();
 
   // responsive
   useEffect(() => {
@@ -152,9 +206,9 @@ export function MnemonicLearningStage(props: MnemonicLearningStageProps) {
               <div className="space-y-4">
                 <div className="space-y-2">
                   <h1 className="text-3xl md:text-4xl font-extrabold text-foreground tracking-tight">{word}</h1>
-                  {phonetic && (
+                  {phon && (
                     <div className="flex items-center gap-3 text-muted">
-                      <span className="text-base">{phonetic}</span>
+                      <span className="text-base">{phon}</span>
                       <PronunciationButton word={word} accent="US" />
                     </div>
                   )}
@@ -171,9 +225,9 @@ export function MnemonicLearningStage(props: MnemonicLearningStageProps) {
                     </div>
                   ))}
                 </div>
-                {tags.length > 0 && (
+                {wordTags.length > 0 && (
                   <div className="flex flex-wrap gap-2 pt-1">
-                    {tags.map((t, i) => (
+                    {wordTags.map((t, i) => (
                       <span key={i} className="text-xs text-slate-200/90 bg-slate-600/30 border border-border/60 px-2.5 py-1 rounded-full">{t}</span>
                     ))}
                   </div>
