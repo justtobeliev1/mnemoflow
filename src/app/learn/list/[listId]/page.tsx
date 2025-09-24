@@ -13,6 +13,7 @@ import { TextEffect } from '@/components/ui/text-effect';
 import { useLearningQueue } from '@/hooks/useLearningQueue';
 import { useRouter } from 'next/navigation';
 import { AnimatePresence } from 'framer-motion';
+import { ExitConfirmModal } from '@/components/ui/exit-confirm-modal';
 
 export default function LearnListPage({ params }: { params: { listId: string } }) {
   const rawParam = params.listId;
@@ -39,6 +40,7 @@ export default function LearnListPage({ params }: { params: { listId: string } }
   const { session } = useAuth();
   const learn = useLearningQueue(S.current?.id);
   const router = useRouter();
+  const [showExitConfirm, setShowExitConfirm] = useState(false);
 
   // 防止首次加载时空态/小结叠加与闪现
   const [attempted, setAttempted] = useState(false);
@@ -151,9 +153,9 @@ export default function LearnListPage({ params }: { params: { listId: string } }
   return (
     <div className="min-h-screen overflow-hidden">
       <button
-        onClick={() => router.push('/learn/select')}
+        onClick={() => setShowExitConfirm(true)}
         className="fixed top-6 left-6 z-50 p-2 rounded-full text-white/70 hover:text-white hover:bg-white/10 transition-colors"
-        aria-label="返回单词本选择"
+        aria-label="退出学习"
       >
         <svg className="w-6 h-6" viewBox="0 0 1024 1024" version="1.1" xmlns="http://www.w3.org/2000/svg">
           <path d="M324.211517 511.805631 787.889594 73.082583c16.19422-16.630365 16.19422-43.974704 0-60.605068-16.19422-16.630365-42.495607-16.630365-58.613976 0L235.750113 479.360302c-8.647031 8.969398-12.344775 20.934917-11.719003 32.445329-0.644735 11.90863 3.071972 23.874149 11.719003 32.824585l493.506542 466.882788c16.118369 16.649327 42.438718 16.649327 58.613976 0 16.19422-17.085471 16.19422-43.974704 0-60.605068L324.211517 511.805631" fill="currentColor"></path>
@@ -210,6 +212,14 @@ export default function LearnListPage({ params }: { params: { listId: string } }
           </AnimatePresence>
         )}
       </main>
+
+      {/* 退出确认弹窗 */}
+      <ExitConfirmModal
+        isOpen={showExitConfirm}
+        onClose={() => setShowExitConfirm(false)}
+        onConfirm={() => {}}
+        mode="learn"
+      />
     </div>
   );
 }

@@ -11,16 +11,28 @@ export interface BreakScreenProps {
   onExit?: () => void;
   fullScreen?: boolean; // center in a clean page
   minimal?: boolean; // no card, pure text
+  prominentSecondary?: boolean; // make secondary button more prominent
 }
 
-export function BreakScreen({ title='会话完成', description, primaryLabel='继续', secondaryLabel='退出', onContinue, onExit, fullScreen=false, minimal=false }: BreakScreenProps) {
+export function BreakScreen({ title='会话完成', description, primaryLabel='继续', secondaryLabel='退出', onContinue, onExit, fullScreen=false, minimal=false, prominentSecondary=false }: BreakScreenProps) {
   const core = (
     <div className="flex flex-col items-center justify-center gap-4">
       {title && <h2 className="text-3xl font-extrabold bg-gradient-to-r from-indigo-200 via-slate-300 to-rose-200 bg-clip-text text-transparent text-center">{title}</h2>}
       {description && <p className="text-muted whitespace-pre-line text-center max-w-2xl">{description}</p>}
       <div className="flex items-center justify-center gap-3 mt-2">
         {onContinue && <button className="px-4 py-2 rounded-md bg-primary text-primary-foreground" onClick={onContinue}>{primaryLabel}</button>}
-        {onExit && <button className="px-4 py-2 rounded-md border border-border" onClick={onExit}>{secondaryLabel}</button>}
+        {onExit && (
+          <button
+            className={`px-4 py-2 rounded-md transition-all ${
+              prominentSecondary
+                ? 'bg-white hover:bg-white/90 text-gray-900 shadow-lg font-medium'
+                : 'border border-border hover:bg-surface/60'
+            }`}
+            onClick={onExit}
+          >
+            {secondaryLabel}
+          </button>
+        )}
       </div>
     </div>
   );
