@@ -47,6 +47,10 @@ export interface UseSessionQueueResult {
   consolidationTip?: 'reencode' | 'retest' | null;
   continueFromBreak: () => void;
   fullLearnQueue: SessionWordLite[]; // Expose for prefetching
+  // 批次管理
+  currentBatchIndex: number;
+  hasNextBatch: boolean;
+  startNextBatch: () => void;
 }
 
 export function useSessionQueue(mode: SessionMode, opts: UseSessionQueueOptions = {}): UseSessionQueueResult {
@@ -76,6 +80,12 @@ export function useSessionQueue(mode: SessionMode, opts: UseSessionQueueOptions 
   const lastEncodedRef = useRef<SessionWordLite | null>(null);
   const fullLearnQueueRef = useRef<SessionWordLite[]>([]); // Persists the full initial list for prefetching
 
+  // 批次学习相关状态
+  const [learnedInBatchCount, setLearnedInBatchCount] = useState(0); // 当前批次已学习的单词数
+  const [currentBatchIndex, setCurrentBatchIndex] = useState(0); // 当前批次索引（0-based）
+  const batchSize = mode === 'learn' ? limit : 0; // 学习模式使用批次大小
+  const [batchWordsTested, setBatchWordsTested] = useState<Set<number>>(new Set()); // 跟踪批次中已测试的单词
+
   const reviewQueue: SessionWordLite[] = useMemo((): SessionWordLite[] => {
     if (mode !== 'review') return [];
     if (reviewSource === 'session') {
@@ -101,15 +111,21 @@ export function useSessionQueue(mode: SessionMode, opts: UseSessionQueueOptions 
     testQueueRef.current = [];
     lastLearnedRef.current = null;
     if (mode === 'learn') {
-      lQueueRef.current = [...base];
+      // 只取批次大小的单词作为当前批次的学习队列
+      const batchWords = base.slice(0, batchSize);
+      lQueueRef.current = [...batchWords];
       tQueueRef.current = [];
       pQueueRef.current = [];
       fullLearnQueueRef.current = [...base]; // Store for prefetching
       lastEncodedRef.current = null;
       setLearningStage('encoding');
       setConsolidationTip(null);
-      if (base.length > 0) {
-        setQueueState([base[0]]); // Set initial word
+      // 重置批次状态
+      setLearnedInBatchCount(0);
+      setCurrentBatchIndex(0);
+      setBatchWordsTested(new Set());
+      if (batchWords.length > 0) {
+        setQueueState([batchWords[0]]); // Set initial word
       } else {
         setQueueState([]);
       }
@@ -180,14 +196,21 @@ export function useSessionQueue(mode: SessionMode, opts: UseSessionQueueOptions 
           if (encodedWord) {
             tQueueRef.current.push(encodedWord);
             lastEncodedRef.current = encodedWord;
+            setLearnedInBatchCount(prev => prev + 1);
           }
           break;
         }
         case 'testing': {
           const testedWord = tQueueRef.current.shift();
-          if (testedWord && (rating === 'hard' || rating === 'again')) {
-            if (!pQueueRef.current.find(p => p.id === testedWord.id)) {
-              pQueueRef.current.push(testedWord);
+          if (testedWord) {
+            // 标记单词为已测试
+            setBatchWordsTested(prev => new Set(prev).add(testedWord.id));
+
+            // 如果测试结果不佳，加入问题词队列
+            if (rating === 'hard' || rating === 'again') {
+              if (!pQueueRef.current.find(p => p.id === testedWord.id)) {
+                pQueueRef.current.push(testedWord);
+              }
             }
           }
           break;
@@ -195,9 +218,14 @@ export function useSessionQueue(mode: SessionMode, opts: UseSessionQueueOptions 
         case 'consolidation_encoding':
           lQueueRef.current.shift(); // Remove the word we just re-encoded
           break;
-        case 'consolidation_testing':
-          pQueueRef.current.shift(); // Remove the word we just re-tested
+        case 'consolidation_testing': {
+          const retestedWord = pQueueRef.current.shift();
+          if (retestedWord) {
+            // 标记重新测试的单词
+            setBatchWordsTested(prev => new Set(prev).add(retestedWord.id));
+          }
           break;
+        }
       }
       _determineNextStep();
     }
@@ -205,7 +233,70 @@ export function useSessionQueue(mode: SessionMode, opts: UseSessionQueueOptions 
 
   // Helper to decide the next current item and learning stage
   function _determineNextStep() {
-    // 1. Main learning loop (L queue has words)
+    // 1. 如果当前在巩固测试阶段，优先处理P队列中的单词
+    if (learningStage === 'consolidation_testing') {
+      if (pQueueRef.current.length > 0) {
+        // 还有需要重新测试的单词
+        setQueueState([pQueueRef.current[0]]);
+        return;
+      } else {
+        // P队列为空，巩固测试完成，直接进入批次完成检查
+        // 由于巩固测试完成，我们设置learningStage为break，这样就不会被批次完成逻辑跳过
+        setLearningStage('break');
+        setConsolidationTip(null); // 清除巩固提示
+        // 继续执行下面的批次完成逻辑
+      }
+    }
+
+    // 2. Check for batch completion (learning mode only) - 检查批次完成
+    if (mode === 'learn' && batchSize > 0) {
+      // 检查是否已学习完批次中所有单词并且测试完成
+      const currentBatchCompleted = learnedInBatchCount >= batchSize &&
+                                  lQueueRef.current.length === 0 &&
+                                  tQueueRef.current.length === 0;
+
+      if (currentBatchCompleted) {
+        // 如果有问题单词需要巩固，先进行巩固
+        if (pQueueRef.current.length > 0 && !['consolidation_encoding', 'consolidation_testing', 'break'].includes(learningStage)) {
+          setLearningStage('break');
+          setConsolidationTip('reencode');
+          setQueueState([]);
+          return;
+        }
+
+        // 如果在巩固过程中，检查巩固状态转换
+        if (learningStage === 'consolidation_encoding' && lQueueRef.current.length === 0 && pQueueRef.current.length > 0) {
+          // 巩固编码完成，需要跳转到巩固测试
+          setLearningStage('break');
+          setConsolidationTip('retest');
+          setQueueState([]);
+          return;
+        }
+
+        // 如果在巩固过程中，检查巩固是否完成
+        if (pQueueRef.current.length === 0 && ['consolidation_encoding', 'consolidation_testing', 'break'].includes(learningStage)) {
+          // 巩固完成，显示批次小结
+          setLearningStage('summary');
+          setQueueState([]);
+          return;
+        }
+
+        // 刚从巩固测试阶段出来的特殊情况（此时learningStage为break，pQueueRef.current.length为0）
+        if (learningStage === 'break' && consolidationTip === null && pQueueRef.current.length === 0) {
+          // 巩固测试真正完成，显示批次小结
+          setLearningStage('summary');
+          setQueueState([]);
+          return;
+        }
+
+        // 没有巩固需要或巩固已完成，显示批次小结
+        setLearningStage('summary');
+        setQueueState([]);
+        return;
+      }
+    }
+
+    // 3. Main learning loop (L queue has words)
     if (lQueueRef.current.length > 0 && learningStage !== 'consolidation_encoding') {
       const nextTestWord = tQueueRef.current[0];
       if (nextTestWord && nextTestWord.id !== lastEncodedRef.current?.id) {
@@ -218,40 +309,58 @@ export function useSessionQueue(mode: SessionMode, opts: UseSessionQueueOptions 
       return;
     }
 
-    // 2. Wrap-up testing (L is empty, but T is not)
+    // 4. Wrap-up testing (L is empty, but T is not)
     if (tQueueRef.current.length > 0) {
       setLearningStage('testing');
       setQueueState([tQueueRef.current[0]]);
       return;
     }
 
-    // 3. Consolidation phase
-    // 3a. Start of consolidation (P has words, and we are not already in consolidation)
+    // 5. Consolidation phase
+    // 5a. Start of consolidation (P has words, and we are not already in consolidation)
     if (pQueueRef.current.length > 0 && !['consolidation_encoding', 'consolidation_testing', 'break'].includes(learningStage)) {
       setLearningStage('break');
       setConsolidationTip('reencode');
       setQueueState([]);
       return;
     }
-    // 3b. Continue re-encoding (temp L queue has words)
+    // 5b. Continue re-encoding (temp L queue has words)
     if (learningStage === 'consolidation_encoding' && lQueueRef.current.length > 0) {
       setQueueState([lQueueRef.current[0]]);
       return; // Stage remains the same
     }
-    // 3c. Transition from re-encoding to re-testing
+    // 5c. Transition from re-encoding to re-testing
     if (learningStage === 'consolidation_encoding' && lQueueRef.current.length === 0) {
       setLearningStage('break');
       setConsolidationTip('retest');
       setQueueState([]);
       return;
     }
-    // 3d. Continue re-testing (P queue has words)
+    // 5d. Continue re-testing (P queue has words)
     if (learningStage === 'consolidation_testing' && pQueueRef.current.length > 0) {
       setQueueState([pQueueRef.current[0]]);
       return; // Stage remains the same
     }
 
-    // 4. All queues are empty. End of session.
+    // 5e. Consolidation testing is complete, transition to summary
+    if (learningStage === 'consolidation_testing' && pQueueRef.current.length === 0) {
+      setLearningStage('summary');
+      setQueueState([]);
+      return;
+    }
+
+    // 6. Handle end of available words but not yet completed batch
+    if (mode === 'learn' && batchSize > 0 && learnedInBatchCount > 0) {
+      // If we've learned some words but not a full batch, and all queues are empty,
+      // we should still show the summary for the partial batch
+      if (lQueueRef.current.length === 0 && tQueueRef.current.length === 0 && pQueueRef.current.length === 0) {
+        setLearningStage('summary');
+        setQueueState([]);
+        return;
+      }
+    }
+
+    // 7. All queues are empty. End of session.
     setLearningStage('summary');
     setQueueState([]);
   }
@@ -264,6 +373,40 @@ export function useSessionQueue(mode: SessionMode, opts: UseSessionQueueOptions 
     } else { // testing
       setLearningStage('consolidation_testing');
       setQueueState(pQueueRef.current.length > 0 ? [pQueueRef.current[0]] : []);
+    }
+  }
+
+  function startNextBatch() {
+    // 计算下一批次的起始和结束索引
+    const nextBatchIndex = currentBatchIndex + 1;
+    const nextBatchStart = nextBatchIndex * batchSize;
+    const nextBatchEnd = nextBatchStart + batchSize;
+
+    // 检查是否还有下一批
+    if (nextBatchStart >= fullLearnQueueRef.current.length) {
+      return; // 没有下一批了
+    }
+
+    // 更新批次索引
+    setCurrentBatchIndex(nextBatchIndex);
+
+    // 初始化下一批的学习队列
+    const nextBatchWords = fullLearnQueueRef.current.slice(nextBatchStart, nextBatchEnd);
+    lQueueRef.current = [...nextBatchWords];
+    tQueueRef.current = [];
+    pQueueRef.current = [];
+
+    // 重置批次状态
+    setLearnedInBatchCount(0);
+    setBatchWordsTested(new Set());
+    setLearningStage('encoding');
+    setConsolidationTip(null);
+
+    // 设置当前单词
+    if (nextBatchWords.length > 0) {
+      setQueueState([nextBatchWords[0]]);
+    } else {
+      setQueueState([]);
     }
   }
 
@@ -321,15 +464,21 @@ export function useSessionQueue(mode: SessionMode, opts: UseSessionQueueOptions 
     testQueueRef.current = [];
     lastLearnedRef.current = null;
     if (mode === 'learn') {
-      lQueueRef.current = [...base];
+      // 只取批次大小的单词作为当前批次的学习队列
+      const batchWords = base.slice(0, batchSize);
+      lQueueRef.current = [...batchWords];
       tQueueRef.current = [];
       pQueueRef.current = [];
       fullLearnQueueRef.current = [...base]; // Store for prefetching
       lastEncodedRef.current = null;
       setLearningStage('encoding');
       setConsolidationTip(null);
-      if (base.length > 0) {
-        setQueueState([base[0]]); // Set initial word
+      // 重置批次状态
+      setLearnedInBatchCount(0);
+      setCurrentBatchIndex(0);
+      setBatchWordsTested(new Set());
+      if (batchWords.length > 0) {
+        setQueueState([batchWords[0]]); // Set initial word
       } else {
         setQueueState([]);
       }
@@ -373,6 +522,11 @@ export function useSessionQueue(mode: SessionMode, opts: UseSessionQueueOptions 
   const peekTest = () => testQueueRef.current.length ? testQueueRef.current[0] : null;
   const shiftTest = () => (testQueueRef.current.shift() ?? null);
 
+  // 计算是否还有下一批
+  const hasNextBatch = mode === 'learn' &&
+                      batchSize > 0 &&
+                      (currentBatchIndex + 1) * batchSize < fullLearnQueueRef.current.length;
+
   return {
     mode,
     queue: queueState,
@@ -397,5 +551,9 @@ export function useSessionQueue(mode: SessionMode, opts: UseSessionQueueOptions 
     consolidationTip,
     continueFromBreak,
     fullLearnQueue: fullLearnQueueRef.current, // Expose for prefetching
+    // 批次管理
+    currentBatchIndex,
+    hasNextBatch,
+    startNextBatch,
   };
 }

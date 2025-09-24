@@ -36,7 +36,7 @@ export default function LearnListPage({ params }: { params: { listId: string } }
     })();
   }, [rawParam, resolvedListId]);
 
-  const S = useSessionQueue('learn', { listId: resolvedListId ?? undefined, limit: 20 });
+  const S = useSessionQueue('learn', { listId: resolvedListId ?? undefined, limit: 10 });
   const { session } = useAuth();
   const learn = useLearningQueue(S.current?.id);
   const router = useRouter();
@@ -79,7 +79,7 @@ export default function LearnListPage({ params }: { params: { listId: string } }
 
   const showInitialEmpty = attempted && !S.loading && !learn.hasLearnedAll && S.queue.length === 0 && !startedWithWords;
   const showHasLearnedAll = attempted && !S.loading && learn.hasLearnedAll;
-  const showSessionSummary = S.learningStage === 'summary';
+  const showSessionSummary = S.learningStage === 'summary' && !showHasLearnedAll;
   const showConsolidationTip = S.learningStage === 'break' && S.consolidationTip;
 
   if (!resolvedListId && !attempted) {
@@ -122,7 +122,7 @@ export default function LearnListPage({ params }: { params: { listId: string } }
     );
   }
 
-  if (showSessionSummary && learn.hasLearnedAll) {
+  if (showHasLearnedAll) {
     return (
        <BreakScreen
         fullScreen
@@ -143,9 +143,9 @@ export default function LearnListPage({ params }: { params: { listId: string } }
         fullScreen
         minimal
         title="已完成一轮学习！"
-        description="做得不错！你已经成功完成了20个单词的深度学习（或复习）。继续or休息，一切去取决于你。"
-        primaryLabel="继续下一轮"
-        onContinue={() => router.refresh()}
+        description="做得不错！你已经成功完成了10个单词的深度学习（或复习）。继续or休息，一切去取决于你。"
+        primaryLabel={S.hasNextBatch ? "继续下一轮" : "学习下一个单词本"}
+        onContinue={S.hasNextBatch ? () => S.startNextBatch() : () => router.push('/learn/select')}
         secondaryLabel="这次就到这里"
         onExit={() => router.push('/learn/select')}
       />
