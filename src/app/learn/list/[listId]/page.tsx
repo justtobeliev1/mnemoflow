@@ -102,20 +102,22 @@ export default function LearnListPage({ params }: { params: { listId: string } }
 
   if (showConsolidationTip) {
     return (
-      <div className="text-center">
-        <TextEffect
-          as="h2"
-          per="char"
-          preset="fade"
-          delay={0.2}
-          trigger={!!showConsolidationTip}
-          className="text-3xl font-bold"
-          onAnimationComplete={() => setTimeout(S.continueFromBreak, 1200)}
-        >
-          {S.consolidationTip === 'reencode'
-            ? "接下来，我们来巩固一下刚才遇到的难点"
-            : "巩固完成，进入再测试"}
-        </TextEffect>
+      <div className="fixed inset-0 flex items-center justify-center">
+        <div className="text-center">
+          <TextEffect
+            as="h2"
+            per="char"
+            preset="fade"
+            delay={0.2}
+            trigger={!!showConsolidationTip}
+            className="text-3xl font-bold"
+            onAnimationComplete={() => setTimeout(S.continueFromBreak, 1200)}
+          >
+            {S.consolidationTip === 'reencode'
+              ? "接下来，我们来巩固一下刚才遇到的难点"
+              : "巩固完成，进入再测试"}
+          </TextEffect>
+        </div>
       </div>
     );
   }
