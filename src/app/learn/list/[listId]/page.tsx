@@ -77,153 +77,145 @@ export default function LearnListPage({ params }: { params: { listId: string } }
     }).catch(() => {});
   }, [S.current?.id, session?.access_token, resolvedListId]);
 
-  const showInitialEmpty = attempted && !S.loading && !learn.hasLearnedAll && S.queue.length === 0 && !startedWithWords;
-  const showHasLearnedAll = attempted && !S.loading && learn.hasLearnedAll;
-  const showSessionSummary = S.learningStage === 'summary' && !showHasLearnedAll;
-  const showConsolidationTip = S.learningStage === 'break' && S.consolidationTip;
+// --- 从这里开始替换 ---
 
-  if (!resolvedListId && !attempted) {
-    return (
-      <BreakScreen fullScreen minimal title="正在定位单词本..." />
-    );
-  }
+const showInitialEmpty = attempted && !S.loading && S.queue.length === 0 && !startedWithWords;
+const showSessionSummary = S.learningStage === 'summary'; // 简化：只关心是否处于小结阶段
+const showConsolidationTip = S.learningStage === 'break' && S.consolidationTip;
 
-  if (showInitialEmpty) {
-    return (
-      <BreakScreen fullScreen minimal title="该单词本暂无可学习的单词" secondaryLabel="退出" onExit={() => { window.location.href = '/'; }} />
-    );
-  }
-
-  if (showHasLearnedAll) {
-    return (
-      <BreakScreen fullScreen minimal title="Congrats！你已攻克这个单词本！" description={'这个单词本中的所有新词都已完成初次学习，FSRS算法将在最恰当的时机提醒你复习单词，直到根植于你的脑海。'} secondaryLabel="返回主页" onExit={() => { window.location.href = '/'; }} />
-    );
-  }
-
-  if (showConsolidationTip) {
-    return (
-      <div className="fixed inset-0 flex items-center justify-center">
-        <div className="text-center">
-          <TextEffect
-            as="h2"
-            per="char"
-            preset="fade"
-            delay={0.2}
-            trigger={!!showConsolidationTip}
-            className="text-3xl font-bold"
-            onAnimationComplete={() => setTimeout(S.continueFromBreak, 1200)}
-          >
-            {S.consolidationTip === 'reencode'
-              ? "接下来，我们来巩固一下刚才遇到的难点"
-              : "巩固完成，进入再测试"}
-          </TextEffect>
-        </div>
-      </div>
-    );
-  }
-
-  if (showHasLearnedAll) {
-    return (
-       <BreakScreen
-        fullScreen
-        minimal
-        title="Congrats！你已攻克这个单词本！"
-        description={'这个单词本中的所有新词都已完成初次学习，FSRS算法将在最恰当的时机提醒你复习单词，直到根植于你的脑海。'}
-        primaryLabel="学习下一个单词本"
-        onContinue={() => router.push('/learn/select')}
-        secondaryLabel="返回主页"
-        onExit={() => router.push('/')}
-      />
-    );
-  }
-
-  if (showSessionSummary) {
-    return (
-      <BreakScreen
-        fullScreen
-        minimal
-        title="已完成一轮学习！"
-        description="做得不错！你已经成功完成了10个单词的深度学习（或复习）。继续or休息，一切去取决于你。"
-        primaryLabel={S.hasNextBatch ? "继续下一轮" : "学习下一个单词本"}
-        onContinue={S.hasNextBatch ? () => S.startNextBatch() : () => router.push('/learn/select')}
-        secondaryLabel="这次就到这里"
-        onExit={() => router.push('/learn/select')}
-      />
-    );
-  }
-
+if (!resolvedListId && !attempted) {
   return (
-    <div className="min-h-screen overflow-hidden">
-      <button
-        onClick={() => setShowExitConfirm(true)}
-        className="fixed top-6 left-6 z-50 p-2 rounded-full text-white/70 hover:text-white hover:bg-white/10 transition-colors"
-        aria-label="退出学习"
-      >
-        <svg className="w-6 h-6" viewBox="0 0 1024 1024" version="1.1" xmlns="http://www.w3.org/2000/svg">
-          <path d="M324.211517 511.805631 787.889594 73.082583c16.19422-16.630365 16.19422-43.974704 0-60.605068-16.19422-16.630365-42.495607-16.630365-58.613976 0L235.750113 479.360302c-8.647031 8.969398-12.344775 20.934917-11.719003 32.445329-0.644735 11.90863 3.071972 23.874149 11.719003 32.824585l493.506542 466.882788c16.118369 16.649327 42.438718 16.649327 58.613976 0 16.19422-17.085471 16.19422-43.974704 0-60.605068L324.211517 511.805631" fill="currentColor"></path>
-        </svg>
-      </button>
+    <BreakScreen fullScreen minimal title="正在定位单词本..." />
+  );
+}
 
-      <main className="relative z-10 max-w-6xl mx-auto px-6 py-10 min-h-screen flex items-center justify-center">
-        {S.current && S.learningStage !== 'summary' && (
-          <AnimatePresence mode="wait">
-            {(() => {
-              if (S.learningStage === 'encoding' || S.learningStage === 'consolidation_encoding') {
-                return (
-                  <ReviewFlowStage
-                    flow="learn"
-                    wordId={S.current.id}
-                    word={S.current.word}
-                    phonetic={undefined}
-                    definitions={defs}
-                    tags={tags}
-                    promptText={S.current.word}
-                    options={opt?.options ?? []}
-                    correctOption={opt?.correct ?? ''}
-                    mnemonicHint={S.mnemonicHint}
-                    onNextWord={() => S.advance()}
-                    forceTestForCurrent={false}
-                    enqueueRelearn={(id) => S.enqueueRelearn(id)} // R 队，学习时不用
-                    clearForceTest={(id) => S.clearForceTest(id)}
-                  />
-                );
-              }
-              if (S.learningStage === 'testing' || S.learningStage === 'consolidation_testing') {
-                return (
-                  <ReviewFlowStage
-                    flow="review" // Use review flow for testing UI
-                    wordId={S.current.id}
-                    word={S.current.word}
-                    phonetic={undefined}
-                    definitions={defs}
-                    tags={tags}
-                    promptText={S.current.word}
-                    options={opt?.options ?? []}
-                    correctOption={opt?.correct ?? ''}
-                    mnemonicHint={S.mnemonicHint}
-                    onNextWord={(rating) => S.advance(rating)}
-                    forceTestForCurrent={true}
-                    alwaysAdvanceOnTest={true}
-                    enqueueRelearn={(id) => S.enqueueRelearn(id)} // R 队，学习时不用
-                    clearForceTest={(id) => S.clearForceTest(id)}
-                  />
-                );
-              }
-              return null;
-            })()}
-          </AnimatePresence>
-        )}
-      </main>
+if (showInitialEmpty) {
+  return (
+    <BreakScreen fullScreen minimal title="该单词本暂无可学习的单词" secondaryLabel="退出" onExit={() => { window.location.href = '/'; }} />
+  );
+}
 
-      {/* 退出确认弹窗 */}
-      <ExitConfirmModal
-        isOpen={showExitConfirm}
-        onClose={() => setShowExitConfirm(false)}
-        onConfirm={() => {}}
-        mode="learn"
-      />
+if (showConsolidationTip) {
+  return (
+    <div className="fixed inset-0 flex items-center justify-center">
+      <div className="text-center">
+        <TextEffect
+          as="h2"
+          per="char"
+          preset="fade"
+          delay={0.2}
+          trigger={!!showConsolidationTip}
+          className="text-3xl font-bold"
+          onAnimationComplete={() => setTimeout(S.continueFromBreak, 1200)}
+        >
+          {S.consolidationTip === 'reencode'
+            ? "接下来，我们来巩固一下刚才遇到的难点"
+            : "巩固完成，进入再测试"}
+        </TextEffect>
+      </div>
     </div>
   );
 }
 
+// 核心修改：统一处理所有 BreakScreen 的逻辑
+if (showSessionSummary) {
+  // 根据 S.hasNextBatch 判断是“完成一轮”还是“攻克单词本”
+  return S.hasNextBatch ? (
+    <BreakScreen
+      fullScreen
+      minimal
+      title="已完成一轮学习！"
+      description="做得不错！你已经成功完成了10个单词的深度学习（或复习）。继续or休息，一切取决于你。"
+      primaryLabel="继续下一轮"
+      onContinue={() => S.startNextBatch()}
+      secondaryLabel="这次就到这里"
+      onExit={() => router.push('/learn/select')}
+    />
+  ) : (
+    <BreakScreen
+      fullScreen
+      minimal
+      title="Congrats！你已攻克这个单词本！"
+      description={'这个单词本中的所有新词都已完成初次学习，FSRS算法将在最恰当的时机提醒你复习单词，直到根植于你的脑海。'}
+      primaryLabel="学习下一个单词本"
+      onContinue={() => router.push('/learn/select')}
+      secondaryLabel="返回主页"
+      onExit={() => router.push('/')}
+    />
+  );
+}
+
+return (
+  <div className="min-h-screen overflow-hidden">
+    <button
+      onClick={() => setShowExitConfirm(true)}
+      className="fixed top-6 left-6 z-50 p-2 rounded-full text-white/70 hover:text-white hover:bg-white/10 transition-colors"
+      aria-label="退出学习"
+    >
+      <svg className="w-6 h-6" viewBox="0 0 1024 1024" version="1.1" xmlns="http://www.w3.org/2000/svg">
+        <path d="M324.211517 511.805631 787.889594 73.082583c16.19422-16.630365 16.19422-43.974704 0-60.605068-16.19422-16.630365-42.495607-16.630365-58.613976 0L235.750113 479.360302c-8.647031 8.969398-12.344775 20.934917-11.719003 32.445329-0.644735 11.90863 3.071972 23.874149 11.719003 32.824585l493.506542 466.882788c16.118369 16.649327 42.438718 16.649327 58.613976 0 16.19422-17.085471 16.19422-43.974704 0-60.605068L324.211517 511.805631" fill="currentColor"></path>
+      </svg>
+    </button>
+
+    <main className="relative z-10 max-w-6xl mx-auto px-6 py-10 min-h-screen flex items-center justify-center">
+      {S.current && S.learningStage !== 'summary' && (
+        <AnimatePresence mode="wait">
+          {(() => {
+            if (S.learningStage === 'encoding' || S.learningStage === 'consolidation_encoding') {
+              return (
+                <ReviewFlowStage
+                  flow="learn"
+                  wordId={S.current.id}
+                  word={S.current.word}
+                  phonetic={undefined}
+                  definitions={defs}
+                  tags={tags}
+                  promptText={S.current.word}
+                  options={opt?.options ?? []}
+                  correctOption={opt?.correct ?? ''}
+                  mnemonicHint={S.mnemonicHint}
+                  onNextWord={() => S.advance()}
+                  forceTestForCurrent={false}
+                  enqueueRelearn={(id) => S.enqueueRelearn(id)} // R 队，学习时不用
+                  clearForceTest={(id) => S.clearForceTest(id)}
+                />
+              );
+            }
+            if (S.learningStage === 'testing' || S.learningStage === 'consolidation_testing') {
+              return (
+                <ReviewFlowStage
+                  flow="review" // Use review flow for testing UI
+                  wordId={S.current.id}
+                  word={S.current.word}
+                  phonetic={undefined}
+                  definitions={defs}
+                  tags={tags}
+                  promptText={S.current.word}
+                  options={opt?.options ?? []}
+                  correctOption={opt?.correct ?? ''}
+                  mnemonicHint={S.mnemonicHint}
+                  onNextWord={(rating) => S.advance(rating)}
+                  forceTestForCurrent={true}
+                  alwaysAdvanceOnTest={true}
+                  enqueueRelearn={(id) => S.enqueueRelearn(id)} // R 队，学习时不用
+                  clearForceTest={(id) => S.clearForceTest(id)}
+                />
+              );
+            }
+            return null;
+          })()}
+        </AnimatePresence>
+      )}
+    </main>
+
+    {/* 退出确认弹窗 */}
+    <ExitConfirmModal
+      isOpen={showExitConfirm}
+      onClose={() => setShowExitConfirm(false)}
+      onConfirm={() => {}}
+      mode="learn"
+    />
+  </div>
+);
+}
 
