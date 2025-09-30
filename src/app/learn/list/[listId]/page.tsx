@@ -54,8 +54,34 @@ export default function LearnListPage({ params }: { params: { listId: string } }
   const [startedWithWords, setStartedWithWords] = useState(false);
   useEffect(() => { if (S.queue.length > 0) setStartedWithWords(true); }, [S.queue.length]);
 
-  const defs = useMemo(() => S.learnWordsDetailed?.find(w => w.id === S.current?.id)?.definition ? parseDefinition(S.learnWordsDetailed.find(w => w.id === S.current?.id)!.definition) : [], [S.current?.id, S.learnWordsDetailed]);
-  const tags = useMemo(() => S.learnWordsDetailed?.find(w => w.id === S.current?.id)?.tags ? parseTags(S.learnWordsDetailed.find(w => w.id === S.current?.id)!.tags as any) : [], [S.current?.id, S.learnWordsDetailed]);
+  const currentWordData = useMemo(() => {
+    if (!S.current?.id || !S.learnWordsDetailed) return null;
+    return S.learnWordsDetailed.find(w => w.id === S.current!.id) || null;
+  }, [S.current?.id, S.learnWordsDetailed]);
+
+  const defs = useMemo(() => {
+    if (!currentWordData?.definition) return [];
+    try {
+      return parseDefinition(currentWordData.definition);
+    } catch (error) {
+      console.error('解析释义失败:', error);
+      return [];
+    }
+  }, [currentWordData?.definition]);
+
+  const tags = useMemo(() => {
+    if (!currentWordData?.tags) return [];
+    try {
+      return parseTags(currentWordData.tags as any);
+    } catch (error) {
+      console.error('解析标签失败:', error);
+      return [];
+    }
+  }, [currentWordData?.tags]);
+
+  const phonetic = useMemo(() => {
+    return currentWordData?.phonetic || undefined;
+  }, [currentWordData?.phonetic]);
 
   // 预取：会话开始时，一次性预取所有需学习单词的选项
   useEffect(() => {
@@ -167,7 +193,7 @@ return (
                   flow="learn"
                   wordId={S.current.id}
                   word={S.current.word}
-                  phonetic={undefined}
+                  phonetic={phonetic}
                   definitions={defs}
                   tags={tags}
                   promptText={S.current.word}
@@ -187,7 +213,7 @@ return (
                   flow="review" // Use review flow for testing UI
                   wordId={S.current.id}
                   word={S.current.word}
-                  phonetic={undefined}
+                  phonetic={phonetic}
                   definitions={defs}
                   tags={tags}
                   promptText={S.current.word}

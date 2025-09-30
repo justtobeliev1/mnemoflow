@@ -45,16 +45,18 @@ export function MnemonicLearningStage(props: MnemonicLearningStageProps) {
   const { session } = useAuth();
 
   useEffect(() => {
-    // 如果都有数据，不需要获取
-    if (definitions.length > 0 && phonetic && tags.length > 0) {
+    // 优先使用props传入的数据
+    const hasCompleteProps = definitions.length > 0 && phonetic && tags.length > 0;
+
+    if (hasCompleteProps) {
       setDefs(definitions);
       setPhon(phonetic);
       setWordTags(tags);
       return;
     }
 
-    // 检查统一缓存
-    const LS_KEY = `word-data-cache:${word}`;
+    // 使用wordId作为缓存键，避免不同单词间的缓存冲突
+    const LS_KEY = wordId ? `word-data-cache:${wordId}` : `word-data-cache:${word}`;
     const cached = (() => {
       try { return JSON.parse(localStorage.getItem(LS_KEY) || 'null'); } catch { return null; }
     })();
@@ -120,7 +122,7 @@ export function MnemonicLearningStage(props: MnemonicLearningStageProps) {
         })
         .catch(() => {});
     }
-  }, [word, definitions, phonetic, tags, session?.access_token]);
+  }, [word, wordId, definitions, phonetic, tags, session?.access_token]);
 
   const [containerWidth, setContainerWidth] = useState(1200);
   const [isChatOpen, setChatOpen] = useState(false);
@@ -172,7 +174,7 @@ export function MnemonicLearningStage(props: MnemonicLearningStageProps) {
       map[key].push(d.meaning);
     }
     return map;
-  }, [defs]);
+  }, [defs, word]); // 添加word依赖，确保单词切换时重新计算
 
   const handleRegenerate = () => {
     setIsLoading(true);
@@ -213,18 +215,26 @@ export function MnemonicLearningStage(props: MnemonicLearningStageProps) {
                     </div>
                   )}
                 </div>
-                <div className="space-y-3">
-                  {Object.entries(grouped).map(([pos, list]) => (
-                    <div key={pos} className="flex items-start gap-3">
-                      {pos !== '—' && <span className="text-xs md:text-sm text-muted bg-surface/30 px-2 py-1 rounded-md shrink-0">{pos}</span>}
-                      <div className="space-y-1">
-                        {list.map((m, i) => (
-                          <p key={i} className="text-foreground/90 leading-relaxed">{m}</p>
-                        ))}
+
+                {/* 数据验证边界：确保释义数据与当前单词匹配 */}
+                {defs.length > 0 ? (
+                  <div className="space-y-3">
+                    {Object.entries(grouped).map(([pos, list]) => (
+                      <div key={pos} className="flex items-start gap-3">
+                        {pos !== '—' && <span className="text-xs md:text-sm text-muted bg-surface/30 px-2 py-1 rounded-md shrink-0">{pos}</span>}
+                        <div className="space-y-1">
+                          {list.map((m, i) => (
+                            <p key={i} className="text-foreground/90 leading-relaxed">{m}</p>
+                          ))}
+                        </div>
                       </div>
-                    </div>
-                  ))}
-                </div>
+                    ))}
+                  </div>
+                ) : (
+                  <div className="text-center py-8">
+                    <div className="text-muted text-sm">正在加载释义数据...</div>
+                  </div>
+                )}
                 {wordTags.length > 0 && (
                   <div className="flex flex-wrap gap-2 pt-1">
                     {wordTags.map((t, i) => (
