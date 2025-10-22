@@ -52,7 +52,6 @@ export interface UseSessionQueueResult {
   currentBatchIndex: number;
   hasNextBatch: boolean;
   startNextBatch: () => void;
-  initialCount: number;
 }
 
 export function useSessionQueue(mode: SessionMode, opts: UseSessionQueueOptions = {}): UseSessionQueueResult {
