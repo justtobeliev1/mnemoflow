@@ -32,6 +32,7 @@ export interface UseSessionQueueResult {
   atBatchEnd: boolean;
   batchStart: number;
   batchEnd: number;
+  initialTotalCount: number;
   quizForCurrentWord: ReviewQuiz | null;
   mnemonicHint: string;
   advance: (rating?: FSRSRating) => void;
@@ -51,6 +52,7 @@ export interface UseSessionQueueResult {
   currentBatchIndex: number;
   hasNextBatch: boolean;
   startNextBatch: () => void;
+  initialCount: number;
 }
 
 export function useSessionQueue(mode: SessionMode, opts: UseSessionQueueOptions = {}): UseSessionQueueResult {
@@ -61,10 +63,12 @@ export function useSessionQueue(mode: SessionMode, opts: UseSessionQueueOptions 
 
   const learn = useLearningQueue(mode === 'learn' ? opts.listId : undefined, limit);
   const review = useReviewSession(undefined, limit, mode === 'review' && reviewSource === 'session');
-  const due = useDueReviews(limit);
+  const dueFetchLimit = reviewSource === 'due' ? limit + 1 : limit;
+  const due = useDueReviews(dueFetchLimit);
 
   const [index, setIndex] = useState(0);
   const [queueState, setQueueState] = useState<SessionWordLite[]>([]);
+  const [initialTotalCount, setInitialTotalCount] = useState(0);
   const delayedRef = useRef<number[]>([]);
   const relearnRef = useRef<number[]>([]);
   const forceTestSetRef = useRef<Set<number>>(new Set());
@@ -93,8 +97,8 @@ export function useSessionQueue(mode: SessionMode, opts: UseSessionQueueOptions 
       return review.quizzes.map((q: ReviewQuiz, i: number) => ({ id: q.quiz_word_id, word: `#${i + 1}` }));
     }
     const items = (due as any).data?.reviews ?? [];
-    return items.map((x: any) => ({ id: x.word_id, word: x.word }));
-  }, [mode, reviewSource, review.quizzes, (due as any).data?.reviews]);
+    return items.slice(0, limit).map((x: any) => ({ id: x.word_id, word: x.word }));
+  }, [mode, reviewSource, review.quizzes, (due as any).data?.reviews, limit]);
 
   const learnQueue: SessionWordLite[] = useMemo((): SessionWordLite[] => {
     if (mode !== 'learn' || !learn.words) return [];
@@ -104,6 +108,7 @@ export function useSessionQueue(mode: SessionMode, opts: UseSessionQueueOptions 
   useEffect(() => {
     const base = mode === 'learn' ? learnQueue : reviewQueue;
     setQueueState(base);
+    setInitialTotalCount(derivedInitialTotalCount);
     setIndex(0);
     delayedRef.current = [];
     relearnRef.current = [];
@@ -457,6 +462,7 @@ export function useSessionQueue(mode: SessionMode, opts: UseSessionQueueOptions 
   function reset() {
     const base = mode === 'learn' ? learnQueue : reviewQueue;
     setQueueState(base);
+    setInitialTotalCount(derivedInitialTotalCount);
     setIndex(0);
     delayedRef.current = [];
     relearnRef.current = [];
@@ -527,6 +533,20 @@ export function useSessionQueue(mode: SessionMode, opts: UseSessionQueueOptions 
                       batchSize > 0 &&
                       (currentBatchIndex + 1) * batchSize < fullLearnQueueRef.current.length;
 
+  const derivedInitialTotalCount = useMemo(() => {
+    if (mode === 'review') {
+      if (reviewSource === 'session') {
+        return review.quizzes?.length ?? 0;
+      }
+      return (due as any).data?.reviews?.length ?? 0;
+    }
+    return fullLearnQueueRef.current.length;
+  }, [mode, reviewSource, review.quizzes, (due as any).data?.reviews, fullLearnQueueRef.current.length]);
+
+  useEffect(() => {
+    setInitialTotalCount(derivedInitialTotalCount);
+  }, [derivedInitialTotalCount]);
+
   return {
     mode,
     queue: queueState,
@@ -555,5 +575,6 @@ export function useSessionQueue(mode: SessionMode, opts: UseSessionQueueOptions 
     currentBatchIndex,
     hasNextBatch,
     startNextBatch,
+    initialTotalCount,
   };
 }

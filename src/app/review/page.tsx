@@ -8,12 +8,16 @@ import { useEffect, useRef, useState } from 'react';
 import { prefetchQuizOptions, useQuizOptions } from '@/hooks/useQuizOptions';
 import { useRouter } from 'next/navigation';
 import { ExitConfirmModal } from '@/components/ui/exit-confirm-modal';
+import { useQueryClient } from '@tanstack/react-query';
 
 export default function ReviewPage() {
+  const ROUND_SIZE = 10;
   // 使用 due 清单作为复习主队列，但继续复用 /review/list/[listId] 的 UI/逻辑
-  const S = useSessionQueue('review', { limit: 20, source: 'due' });
+  const S = useSessionQueue('review', { limit: ROUND_SIZE, source: 'due' });
   const router = useRouter();
+  const queryClient = useQueryClient();
   const [showExitConfirm, setShowExitConfirm] = useState(false);
+  const [restarting, setRestarting] = useState(false);
 
   // 防止首次加载时闪现"无单词/小结"
   const [attempted, setAttempted] = useState(false);
@@ -26,8 +30,24 @@ export default function ReviewPage() {
   const startedWithWordsRef = useRef(false);
   useEffect(() => { if (S.queue.length > 0) startedWithWordsRef.current = true; }, [S.queue.length]);
 
-  const showInitialEmpty = attempted && !S.loading && S.queue.length === 0 && !startedWithWordsRef.current;
+  const showInitialEmpty = attempted && !S.loading && S.queue.length === 0 && !startedWithWordsRef.current && !restarting;
+  const finishedAll = S.initialTotalCount <= ROUND_SIZE;
   const showSessionSummary = attempted && !S.loading && !S.current && startedWithWordsRef.current;
+
+  // 重启下一轮：保持小结页，触发 due 列表重新获取并重置会话
+  function startNextRound() {
+    setRestarting(true);
+    queryClient.invalidateQueries({ queryKey: ['due-reviews'] });
+    // 重置内部队列（会基于最新的 due 列表构造）
+    S.reset();
+  }
+
+  // 当拿到新一轮的首个单词后，结束重启态
+  useEffect(() => {
+    if (restarting && S.current) {
+      setRestarting(false);
+    }
+  }, [restarting, S.current]);
 
   // 预取本批次的四选项，加速切题
   useEffect(() => {
@@ -87,11 +107,13 @@ export default function ReviewPage() {
           <BreakScreen
             fullScreen
             minimal
-            title="已完成一轮复习！"
-            description={'做得不错！你已经成功完成了20个单词的深度复习。\n继续or休息，一切取决于你。'}
-            primaryLabel="再来一轮"
+            title={finishedAll ? "今日复习全部完成！" : "已完成一轮复习！"}
+            description={finishedAll
+              ? '太棒了！你已经完成了今日所有待复习的单词，休息一下或回到主页看看吧。'
+              : `做得不错！你已经完成了${ROUND_SIZE}个单词的复习\n继续or休息，一切取决于你`}
+            primaryLabel={finishedAll ? undefined : "再来一轮"}
             secondaryLabel="返回主页"
-            onContinue={() => { window.location.reload(); }}
+            onContinue={finishedAll ? undefined : startNextRound}
             onExit={() => { window.location.href = '/'; }}
           />
         )}
